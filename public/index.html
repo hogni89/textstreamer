@@ -4,38 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Samkomu Streamer</title>
+    <link rel="stylesheet" href="style.css">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <style>
-        :root { --bg: #ffffff; --text: #000000; --size: 60px; }
-        body { 
-            background: var(--bg); color: var(--text); 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            margin: 0; transition: background 0.3s, color 0.3s; overflow-x: hidden; 
-        }
-        .header { 
-            background: rgba(128, 128, 128, 0.15); backdrop-filter: blur(10px);
-            padding: 10px; position: sticky; top: 0; display: flex; gap: 15px; 
-            align-items: center; justify-content: center; z-index: 100; border-bottom: 1px solid rgba(0,0,0,0.1); 
-        }
-        .setup-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 15px; }
-        .hidden { display: none !important; }
-        
-        #output { 
-            padding: 40px 20px; font-size: var(--size); line-height: 1.5; 
-            white-space: pre-wrap; word-wrap: break-word; 
-            /* Vit nýtast ikki 80vh padding longur við nýggja logikkinum */
-            padding-bottom: 50vh; 
-        }
-
-        textarea { width: 90%; height: 300px; font-size: 18px; margin-top: 20px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
-        input, button, select { padding: 12px 18px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; }
-        button { cursor: pointer; background: #007bff; color: white; border: none; }
-        .wpm-controls { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.05); padding: 5px 15px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); }
-        .stop { background: #dc3545; }
-        .exit-btn { background: #6c757d; }
-        #qrcode { margin-top: 20px; background: white; padding: 15px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    </style>
 </head>
 <body>
 
@@ -59,23 +30,22 @@
 
     <div id="reader-ui" class="hidden">
         <div class="header">
-            <button class="exit-btn" onclick="exitSession()">🏠 Út</button>
+            <button class="exit-btn" onclick="exitSession()">🏠</button>
             <select onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
                 <option value="40">Lítil</option>
                 <option value="60" selected>Miðal</option>
                 <option value="90">Stórur</option>
-                <option value="120">Risastórt</option>
             </select>
             <select onchange="applyTheme(this.value)">
                 <option value="light">Ljóst</option>
                 <option value="dark">Svart</option>
-                <option value="sepia">Sepia</option>
             </select>
             <div class="wpm-controls">
                 <span>WPM: <b id="wpm-display">160</b></span>
                 <button onclick="adjustWPM(-10)">-</button>
                 <button onclick="adjustWPM(10)">+</button>
             </div>
+            <div id="pause-indicator"><span class="dot"></span> <span>Steðgur í talu</span></div>
         </div>
         <div id="output"></div>
     </div>
@@ -83,9 +53,10 @@
     <script>
         const socket = io();
         
+        // Error logging til Render
         window.onerror = function(message, source, lineno, colno, error) {
             if (socket && socket.connected) {
-                socket.emit('client-error', { message, line: lineno, column: colno, url: source, userAgent: navigator.userAgent });
+                socket.emit('client-error', { message, line: lineno, url: source });
             }
             return false;
         };
@@ -95,6 +66,7 @@
         let textQueue = [];
         let isProcessing = false;
         let fullTextReceived = "";
+        let pauseTimer = null;
 
         function init(role) {
             currentRoom = document.getElementById('roomCode').value.trim();
@@ -120,6 +92,15 @@
 
         socket.on('session-error', (msg) => alert(msg));
 
+        function resetPauseTimer() {
+            const indicator = document.getElementById('pause-indicator');
+            if (indicator) indicator.style.opacity = "0";
+            clearTimeout(pauseTimer);
+            pauseTimer = setTimeout(() => {
+                if (indicator && fullTextReceived.length > 0) indicator.style.opacity = "1";
+            }, 10000);
+        }
+
         socket.on('connect', () => {
             if (currentRoom) {
                 const isWriter = !document.getElementById('writer-ui').classList.contains('hidden');
@@ -140,8 +121,7 @@
         function applyTheme(theme) {
             const themes = {
                 light: { bg: '#ffffff', text: '#000000' },
-                dark: { bg: '#121212', text: '#eeeeee' },
-                sepia: { bg: '#f4ecd8', text: '#5b4636' }
+                dark: { bg: '#000000', text: '#eeeeee' }
             };
             document.documentElement.style.setProperty('--bg', themes[theme].bg);
             document.documentElement.style.setProperty('--text', themes[theme].text);
@@ -151,23 +131,13 @@
             if(confirm("Vilt tú fara út?")) location.href = window.location.origin + window.location.pathname;
         }
 
-        // --- NÝTT SCROLL LOGIKK ---
         function checkAndScroll() {
             const out = document.getElementById('output');
-            
-            // Finn akkurát hvar botnurin á tekstinum er í mun til skermin (viewport)
             const rect = out.getBoundingClientRect();
             const textBottom = rect.top + rect.height;
-            
-            // Vit vilja bara rulla, um teksturin er komin niður um t.d. 80% av skermhæddini
             const triggerPoint = window.innerHeight * 0.8;
-            
             if (textBottom > triggerPoint) {
-                // Rulla akkurát tað, sum teksturin fyllir eyka, spakuliga
-                window.scrollBy({
-                    top: textBottom - triggerPoint,
-                    behavior: 'smooth'
-                });
+                window.scrollBy({ top: textBottom - triggerPoint, behavior: 'smooth' });
             }
         }
 
@@ -191,6 +161,7 @@
         }
 
         socket.on('text-receive', (newFullText) => {
+            resetPauseTimer();
             if (newFullText.length > fullTextReceived.length) {
                 const newChunk = newFullText.slice(fullTextReceived.length);
                 textQueue.push(newChunk);
