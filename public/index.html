@@ -52,27 +52,22 @@
 
     <script>
         const socket = io();
-        
-        // Error logging til Render
-        window.onerror = function(message, source, lineno, colno, error) {
-            if (socket && socket.connected) {
-                socket.emit('client-error', { message, line: lineno, url: source });
-            }
-            return false;
-        };
-
         let currentRoom = "";
         let wpm = 160;
         let textQueue = [];
         let isProcessing = false;
         let fullTextReceived = "";
+        let lastSentText = "";
         let pauseTimer = null;
+
+        window.onerror = (message, source, lineno) => {
+            if (socket.connected) socket.emit('client-error', { message, line: lineno, url: source });
+        };
 
         function init(role) {
             currentRoom = document.getElementById('roomCode').value.trim();
             if (!currentRoom) return alert("Skriva eina kotu!");
-            if (role === 'writer') socket.emit('create-session', currentRoom);
-            else socket.emit('join-session', currentRoom);
+            socket.emit(role === 'writer' ? 'create-session' : 'join-session', currentRoom);
         }
 
         socket.on('session-created', (roomCode) => {
@@ -80,8 +75,16 @@
             document.getElementById('writer-ui').classList.remove('hidden');
             document.getElementById('active-code').innerText = roomCode;
             new QRCode(document.getElementById("qrcode"), { text: window.location.origin + "?room=" + roomCode, width: 160, height: 160 });
+            
             document.getElementById('writer-input').addEventListener('input', (e) => {
-                socket.emit('text-update', { roomCode: currentRoom, text: e.target.value });
+                const currentText = e.target.value;
+                if (currentText.length > lastSentText.length) {
+                    const delta = currentText.slice(lastSentText.length);
+                    socket.emit('text-delta', { roomCode: currentRoom, delta });
+                } else if (currentText.length < lastSentText.length) {
+                    socket.emit('text-reset', { roomCode: currentRoom, fullText: currentText });
+                }
+                lastSentText = currentText;
             });
         });
 
@@ -91,6 +94,21 @@
         });
 
         socket.on('session-error', (msg) => alert(msg));
+
+        // Delta-móttøka hjá lesara
+        socket.on('text-delta', (delta) => {
+            resetPauseTimer();
+            textQueue.push(delta);
+            fullTextReceived += delta;
+            processQueue();
+        });
+
+        socket.on('text-reset', (fullText) => {
+            resetPauseTimer();
+            textQueue = [];
+            fullTextReceived = fullText;
+            document.getElementById('output').innerText = fullText;
+        });
 
         function resetPauseTimer() {
             const indicator = document.getElementById('pause-indicator');
@@ -104,8 +122,7 @@
         socket.on('connect', () => {
             if (currentRoom) {
                 const isWriter = !document.getElementById('writer-ui').classList.contains('hidden');
-                if (isWriter) socket.emit('reclaim-session', currentRoom);
-                else socket.emit('join-session', currentRoom);
+                socket.emit(isWriter ? 'reclaim-session' : 'join-session', currentRoom);
             }
         });
 
@@ -134,10 +151,9 @@
         function checkAndScroll() {
             const out = document.getElementById('output');
             const rect = out.getBoundingClientRect();
-            const textBottom = rect.top + rect.height;
             const triggerPoint = window.innerHeight * 0.8;
-            if (textBottom > triggerPoint) {
-                window.scrollBy({ top: textBottom - triggerPoint, behavior: 'smooth' });
+            if (rect.top + rect.height > triggerPoint) {
+                window.scrollBy({ top: (rect.top + rect.height) - triggerPoint, behavior: 'smooth' });
             }
         }
 
@@ -151,27 +167,13 @@
                 for (let word of words) {
                     out.innerText += word;
                     if (word.trim()) {
-                        let delay = (60 / wpm) * 1000;
-                        await new Promise(r => setTimeout(r, delay));
+                        await new Promise(r => setTimeout(r, (60 / wpm) * 1000));
                         checkAndScroll();
                     }
                 }
             }
             isProcessing = false;
         }
-
-        socket.on('text-receive', (newFullText) => {
-            resetPauseTimer();
-            if (newFullText.length > fullTextReceived.length) {
-                const newChunk = newFullText.slice(fullTextReceived.length);
-                textQueue.push(newChunk);
-                fullTextReceived = newFullText;
-                processQueue();
-            } else {
-                fullTextReceived = newFullText;
-                document.getElementById('output').innerText = newFullText;
-            }
-        });
 
         function terminate() {
             if (confirm("Vilt tú steðga sessiónini?")) socket.emit('stop-session', currentRoom);
