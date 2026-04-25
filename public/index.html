@@ -11,28 +11,24 @@
         body { 
             background: var(--bg); color: var(--text); 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            margin: 0; transition: 0.3s; overflow-x: hidden; 
+            margin: 0; transition: background 0.3s, color 0.3s; overflow-x: hidden; 
         }
         
-        /* Header stýring */
         .header { 
             background: rgba(128, 128, 128, 0.15); backdrop-filter: blur(10px);
             padding: 10px; position: sticky; top: 0; display: flex; gap: 15px; 
             align-items: center; justify-content: center; z-index: 100; border-bottom: 1px solid rgba(0,0,0,0.1); 
         }
 
-        /* Startskermur */
         .setup-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 15px; }
         .hidden { display: none !important; }
         
-        /* Tekst vísari */
         #output { 
             padding: 40px 20px; font-size: var(--size); line-height: 1.5; 
             white-space: pre-wrap; word-wrap: break-word; 
-            padding-bottom: 75vh; /* Tryggjar pláss til smooth scroll */
+            padding-bottom: 75vh; 
         }
         
-        /* Knøttar og Felt */
         textarea { width: 90%; height: 300px; font-size: 18px; margin-top: 20px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
         input, button, select { padding: 12px 18px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; }
         
@@ -96,15 +92,19 @@
 
     <script>
         const socket = io();
+        
+        // Variablar defineraðir ovast fyri at sleppa undan Initialization feili
         let currentRoom = "";
         let wpm = 160;
         let textQueue = [];
         let isProcessing = false;
         let fullTextReceived = "";
 
-        // US2: Stovna ella Join (við validering frá server)
+        // US2: Stovna ella Join
         function init(role) {
-            currentRoom = document.getElementById('roomCode').value.trim();
+            const inputField = document.getElementById('roomCode');
+            currentRoom = inputField.value.trim();
+            
             if (!currentRoom) return alert("Vinarliga skriva eina kotu!");
 
             if (role === 'writer') {
@@ -114,13 +114,12 @@
             }
         }
 
-        // Server svarar upp á stovning
+        // Server svarar
         socket.on('session-created', (roomCode) => {
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('writer-ui').classList.remove('hidden');
             document.getElementById('active-code').innerText = roomCode;
             
-            // Generera QR-kotu
             new QRCode(document.getElementById("qrcode"), {
                 text: window.location.origin + "?room=" + roomCode,
                 width: 160, height: 160
@@ -131,16 +130,14 @@
             });
         });
 
-        // Server svarar upp á join
         socket.on('session-joined', (roomCode) => {
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('reader-ui').classList.remove('hidden');
         });
 
-        // Feilmelding (t.d. upptikin kota)
         socket.on('session-error', (msg) => alert(msg));
 
-        // WPM og Themes
+        // Personalisering
         function adjustWPM(val) {
             wpm = Math.max(10, wpm + val);
             document.getElementById('wpm-display').innerText = wpm;
@@ -162,7 +159,7 @@
 
         // US6: Smooth Auto-scroll
         function smoothScroll() {
-            const buffer = window.innerHeight * 0.45; // Miðja tekstin á skermin
+            const buffer = window.innerHeight * 0.45; 
             const targetY = document.body.scrollHeight - window.innerHeight + buffer;
             
             if (window.scrollY < targetY - 30) {
@@ -173,7 +170,7 @@
             }
         }
 
-        // US4: Orð fyri orð vísing
+        // US4: Orð fyri orð
         async function processQueue() {
             if (isProcessing || textQueue.length === 0) return;
             isProcessing = true;
@@ -181,7 +178,7 @@
 
             while (textQueue.length > 0) {
                 const chunk = textQueue.shift();
-                const words = chunk.split(/(\s+)/); // Splitta orð men goym millumrúm/linjubrot
+                const words = chunk.split(/(\s+)/);
 
                 for (let word of words) {
                     out.innerText += word;
@@ -203,7 +200,6 @@
                 fullTextReceived = newFullText;
                 processQueue();
             } else {
-                // Sletting: Uppdatera vísaran beinanvegin
                 fullTextReceived = newFullText;
                 document.getElementById('output').innerText = newFullText;
             }
@@ -218,7 +214,7 @@
             location.href = window.location.origin + window.location.pathname;
         });
 
-        // Tjekka QR-parametur í URL
+        // Tjekka URL fyri QR-auto join
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) {
             document.getElementById('roomCode').value = urlParams.get('room');
