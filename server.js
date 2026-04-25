@@ -10,13 +10,13 @@ const io = new Server(server);
 app.use(express.static('public'));
 
 io.on('connection', (socket) => {
-    // US2: Join room baserað á sessiónskotu
+    // US2: Join room
     socket.on('join-session', (roomCode) => {
         socket.join(roomCode);
         console.log(`Brúkari fór inn í sessión: ${roomCode}`);
     });
 
-    // US1: Stream tekst til øll í rúminum
+    // US1: Stream tekst til rúmið
     socket.on('text-update', ({ roomCode, text }) => {
         socket.to(roomCode).emit('text-receive', text);
     });
@@ -24,7 +24,6 @@ io.on('connection', (socket) => {
     // US7: Steðga sessión
     socket.on('stop-session', (roomCode) => {
         io.to(roomCode).emit('session-ended');
-        console.log(`Sessión ${roomCode} endað`);
     });
 });
 

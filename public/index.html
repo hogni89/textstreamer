@@ -1,65 +1,153 @@
 <!DOCTYPE html>
-<html>
+<html lang="fo">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Samkomu Streamer</title>
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        :root { --bg: #ffffff; --text: #000000; --size: 24px; }
-        body { background: var(--bg); color: var(--text); font-family: sans-serif; margin: 20px; transition: 0.3s; }
-        #output { font-size: var(--size); line-height: 1.5; white-space: pre-wrap; margin-bottom: 500px; }
-        .controls { background: #eee; padding: 10px; position: sticky; top: 0; color: #000; border-radius: 8px; }
-        .hidden { display: none; }
+        :root { 
+            --bg: #ffffff; 
+            --text: #000000; 
+            --size: 50px; 
+        }
+        
+        body { 
+            background: var(--bg); 
+            color: var(--text); 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            transition: background 0.3s, color 0.3s;
+            overflow-x: hidden;
+        }
+        
+        /* Header / Menu */
+        .header { 
+            background: rgba(128, 128, 128, 0.15); 
+            backdrop-filter: blur(5px);
+            padding: 10px; 
+            position: sticky; 
+            top: 0; 
+            display: flex; 
+            gap: 10px; 
+            align-items: center; 
+            flex-wrap: wrap; 
+            z-index: 100; 
+            border-bottom: 1px solid rgba(0,0,0,0.1); 
+        }
+
+        /* Setup / Login */
+        .setup-container { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            gap: 15px; 
+        }
+
+        .hidden { display: none !important; }
+        
+        /* Tekst vísari */
+        #output { 
+            padding: 20px; 
+            font-size: var(--size); 
+            line-height: 1.6; 
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            min-height: 20vh;
+            /* Padding í botninum ger at teksturin kann rulla upp á miðjan skermin */
+            padding-bottom: 50vh; 
+        }
+
+        #scroll-anchor {
+            height: 2px;
+            width: 100%;
+        }
+        
+        /* UI Elements */
+        textarea { width: 90%; height: 250px; font-size: 18px; margin-top: 20px; padding: 15px; border-radius: 8px; border: 1px solid #ccc; }
+        input, button, select { padding: 12px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; font-weight: bold; }
+        button.stop { background: #dc3545; }
+        
+        #qrcode { margin-top: 20px; background: white; padding: 15px; border-radius: 10px; display: inline-block; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 5px; }
     </style>
 </head>
 <body>
 
-    <div id="setup" class="controls">
-        <input id="roomCode" placeholder="Sessiónskota (t.d. 1234)">
-        <button onclick="startSession('writer')">Stovna (Skribentur)</button>
-        <button onclick="startSession('reader')">Join (Lesari)</button>
+    <div id="setup" class="setup-container">
+        <h1>Samkomu Streamer</h1>
+        <input type="text" id="roomCode" placeholder="Sessiónskota (t.d. 1234)">
+        <div style="display:flex; gap:10px;">
+            <button onclick="init('writer')">Stovna (Skribentur)</button>
+            <button onclick="init('reader')">Join (Lesari)</button>
+        </div>
     </div>
 
-    <div id="writer-ui" class="hidden">
-        <h3>Skribentur - Kota: <span id="display-code"></span></h3>
+    <div id="writer-ui" class="hidden" style="padding: 20px; text-align: center;">
+        <h2>Sessión: <span id="active-code"></span></h2>
         <div id="qrcode"></div>
-        <textarea id="input" style="width:100%; height:100px;" placeholder="Skriva ella pasta tekst her..."></textarea>
-        <button onclick="stopSession()" style="background:red; color:white;">Enda Sessión</button>
+        <br>
+        <textarea id="writer-input" placeholder="Byrja at skriva ella pasta tekst her..."></textarea>
+        <br><br>
+        <button class="stop" onclick="terminate()">Enda Sessión fyri øll</button>
     </div>
 
     <div id="reader-ui" class="hidden">
-        <div class="controls">
-            Font: <select onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
-                <option value="24">Lítil</option><option value="48" selected>Miðal</option><option value="80">Stórur</option>
+        <div class="header">
+            <span id="conn-status"><span class="status-dot" style="background: #28a745;"></span> Online</span>
+            <select onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
+                <option value="30">Lítil</option>
+                <option value="50" selected>Miðal</option>
+                <option value="80">Stórur</option>
+                <option value="120">Ekstra Stórur</option>
             </select>
-            Theme: <button onclick="setTheme('#fff', '#000')">Light</button> <button onclick="setTheme('#121212', '#eee')">Dark</button>
-            <span id="status">🟢 Online</span>
+            <select onchange="applyTheme(this.value)">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="sepia">Sepia</option>
+            </select>
+            <select id="mode-select" onchange="displayMode = this.value">
+                <option value="letter">Bókstav fyri bókstav</option>
+                <option value="word">Orð fyri orð</option>
+                <option value="instant">Alt í senn</option>
+            </select>
         </div>
+        
         <div id="output"></div>
+        <div id="scroll-anchor"></div>
     </div>
 
     <script>
         const socket = io();
         let currentRoom = "";
+        let displayMode = "letter";
+        let textQueue = [];
+        let isProcessing = false;
+        let fullTextReceived = "";
 
-        function setTheme(bg, text) {
-            document.documentElement.style.setProperty('--bg', bg);
-            document.documentElement.style.setProperty('--text', text);
-        }
-
-        function startSession(role) {
+        // US2: Stovna/Join Sessión
+        function init(role) {
             currentRoom = document.getElementById('roomCode').value;
-            if (!currentRoom) return alert("Skriva eina kotu!");
+            if (!currentRoom) return alert("Vinarliga skriva eina sessiónskotu!");
 
             socket.emit('join-session', currentRoom);
             document.getElementById('setup').classList.add('hidden');
-            
+
             if (role === 'writer') {
                 document.getElementById('writer-ui').classList.remove('hidden');
-                document.getElementById('display-code').innerText = currentRoom;
-                new QRCode(document.getElementById("qrcode"), window.location.href);
-                
-                document.getElementById('input').addEventListener('input', (e) => {
+                document.getElementById('active-code').innerText = currentRoom;
+                // QR koda vísir til somu síðu við ?room= parameturi
+                new QRCode(document.getElementById("qrcode"), {
+                    text: window.location.origin + "?room=" + currentRoom,
+                    width: 160, height: 160
+                });
+
+                // US1: Send tekst so hvørt
+                document.getElementById('writer-input').addEventListener('input', (e) => {
                     socket.emit('text-update', { roomCode: currentRoom, text: e.target.value });
                 });
             } else {
@@ -67,23 +155,93 @@
             }
         }
 
-        socket.on('text-receive', (text) => {
-            const out = document.getElementById('output');
-            out.innerText = text;
-            window.scrollTo(0, document.body.scrollHeight); // US6: Auto-scroll
-        });
-
-        socket.on('session-ended', () => {
-            alert("Sessiónin er endað.");
-            location.reload();
-        });
-
-        function stopSession() {
-            if(confirm("Vilt tú steðga stroymingini?")) socket.emit('stop-session', currentRoom);
+        // US4: Themes
+        function applyTheme(theme) {
+            const themes = {
+                light: { bg: '#ffffff', text: '#000000' },
+                dark: { bg: '#121212', text: '#eeeeee' },
+                sepia: { bg: '#f4ecd8', text: '#5b4636' }
+            };
+            document.documentElement.style.setProperty('--bg', themes[theme].bg);
+            document.documentElement.style.setProperty('--text', themes[theme].text);
         }
 
-        socket.on('disconnect', () => document.getElementById('status').innerText = "🔴 Offline - Reconnecting...");
-        socket.on('connect', () => { if(currentRoom) document.getElementById('status').innerText = "🟢 Online"; });
+        // US4, US6: Smooth Scrolling & Display Logic
+        async function processQueue() {
+            if (isProcessing || textQueue.length === 0) return;
+            isProcessing = true;
+            
+            const out = document.getElementById('output');
+            const anchor = document.getElementById('scroll-anchor');
+
+            while (textQueue.length > 0) {
+                const chunk = textQueue.shift();
+                
+                if (displayMode === "instant") {
+                    out.innerText += chunk;
+                    anchor.scrollIntoView({ behavior: "smooth", block: "end" });
+                } 
+                else if (displayMode === "word") {
+                    const words = chunk.split(/(\s+)/);
+                    for (let word of words) {
+                        out.innerText += word;
+                        if (word.trim()) {
+                            await new Promise(r => setTimeout(r, 120));
+                            anchor.scrollIntoView({ behavior: "smooth", block: "end" });
+                        }
+                    }
+                } 
+                else { // letter mode
+                    for (let char of chunk) {
+                        out.innerText += char;
+                        // Rulla bara fyri hvørji 5 tekn fyri at minka um "jitter"
+                        if (char === " " || out.innerText.length % 5 === 0) {
+                            anchor.scrollIntoView({ behavior: "auto", block: "end" });
+                        }
+                        await new Promise(r => setTimeout(r, 30));
+                    }
+                }
+                // Tryggja endaliga rulling eftir hvønn batch
+                anchor.scrollIntoView({ behavior: "smooth", block: "end" });
+            }
+            isProcessing = false;
+        }
+
+        // Móttøka av teksti (US3)
+        socket.on('text-receive', (newFullText) => {
+            if (newFullText.length > fullTextReceived.length) {
+                const newChunk = newFullText.slice(fullTextReceived.length);
+                textQueue.push(newChunk);
+                fullTextReceived = newFullText;
+                processQueue();
+            }
+        });
+
+        // Samband status (US5)
+        socket.on('disconnect', () => {
+            document.getElementById('conn-status').innerHTML = '<span class="status-dot" style="background: #dc3545;"></span> Offline - Reconnecting...';
+        });
+        socket.on('connect', () => {
+            if(currentRoom) document.getElementById('conn-status').innerHTML = '<span class="status-dot" style="background: #28a745;"></span> Online';
+        });
+
+        // Steðga sessión (US7)
+        function terminate() {
+            if (confirm("Vilt tú steðga stroymingini fyri øll?")) {
+                socket.emit('stop-session', currentRoom);
+            }
+        }
+        socket.on('session-ended', () => {
+            alert("Skribenturin hevur steðgað sessiónini.");
+            location.href = window.location.origin + window.location.pathname;
+        });
+
+        // Automatiskt join via URL (QR koda)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('room')) {
+            document.getElementById('roomCode').value = urlParams.get('room');
+            init('reader');
+        }
     </script>
 </body>
 </html>
