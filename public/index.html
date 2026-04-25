@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Samkomu Streamer</title>
+    <title>Tekst Stroyming</title>
     <link rel="stylesheet" href="style.css">
     <script src="lang.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -17,6 +17,18 @@
         <div style="display:flex; gap:10px;">
             <button onclick="init('writer')" id="txt-btn-create"></button>
             <button onclick="init('reader')" id="txt-btn-join"></button>
+        </div>
+
+        <div class="setup-info">
+            <h2 id="txt-about-title"></h2>
+            <p id="txt-about-p1"></p>
+            <p id="txt-about-p2"></p>
+            <p id="txt-about-p3"></p>
+            <p id="txt-about-p4"></p>
+            <p id="txt-about-p5"></p>
+            <p id="txt-about-p6"></p>
+            <p id="txt-about-p7"></p>
+            <div class="footer-note" id="txt-about-footer"></div>
         </div>
     </div>
 
@@ -33,10 +45,8 @@
     <div id="reader-ui" class="hidden">
         <div class="header">
             <button class="exit-btn" onclick="exitSession()" id="txt-reader-exit"></button>
-            <select id="size-select" onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
-                </select>
-            <select id="theme-select" onchange="applyTheme(this.value)">
-                </select>
+            <select id="size-select" onchange="document.documentElement.style.setProperty('--size', this.value + 'px')"></select>
+            <select id="theme-select" onchange="applyTheme(this.value)"></select>
             <div class="wpm-controls">
                 <span>WPM: <b id="wpm-display">160</b></span>
                 <button onclick="adjustWPM(-10)">-</button>
@@ -54,7 +64,7 @@
         let fullTextReceived = "", lastSentText = "", pauseTimer = null, typingTimer = null;
         let wakeLock = null;
 
-        // --- SETA TEKSTIR INN TÁ APPIN BYRJAR ---
+        // --- SETA TEKSTIR INN ÚR LANG.JS ---
         function applyLanguage() {
             document.title = lang.title;
             document.getElementById('txt-setup-title').innerText = lang.setup_title;
@@ -67,23 +77,36 @@
             document.getElementById('txt-writer-terminate').innerText = lang.writer_terminate;
             document.getElementById('txt-reader-exit').innerText = lang.reader_exit;
             document.getElementById('txt-reader-pause').innerText = lang.reader_pause;
+            
+            // About partur
+            document.getElementById('txt-about-title').innerText = lang.about_title;
+            document.getElementById('txt-about-p1').innerText = lang.about_p1;
+            document.getElementById('txt-about-p2').innerText = lang.about_p2;
+            document.getElementById('txt-about-p3').innerText = lang.about_p3;
+            document.getElementById('txt-about-p4').innerText = lang.about_p4;
+            document.getElementById('txt-about-p5').innerText = lang.about_p5;
+            document.getElementById('txt-about-p6').innerText = lang.about_p6;
+            
+            // Ger GitHub linkið virkið
+            document.getElementById('txt-about-p7').innerHTML = lang.about_p7.replace(
+                'https://github.com/hogni89/textstreamer', 
+                '<a href="https://github.com/hogni89/textstreamer" target="_blank" style="color:var(--accent)">GitHub</a>'
+            );
+            document.getElementById('txt-about-footer').innerText = lang.about_footer;
 
-            // Fylla select-boksarnar
-            const sizeS = document.getElementById('size-select');
-            sizeS.innerHTML = `
+            // Select boksar
+            document.getElementById('size-select').innerHTML = `
                 <option value="40">${lang.reader_size_small}</option>
                 <option value="60" selected>${lang.reader_size_medium}</option>
                 <option value="90">${lang.reader_size_large}</option>`;
-
-            const themeS = document.getElementById('theme-select');
-            themeS.innerHTML = `
+            document.getElementById('theme-select').innerHTML = `
                 <option value="light">${lang.reader_theme_light}</option>
                 <option value="dark">${lang.reader_theme_dark}</option>`;
         }
 
-        // Koyr Language fuksjónina beinanvegin
         applyLanguage();
 
+        // --- WAKE LOCK API ---
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
                 try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
@@ -107,7 +130,8 @@
             input.addEventListener('input', (e) => {
                 const currentText = e.target.value;
                 if (currentText.length > lastSentText.length) {
-                    socket.emit('text-delta', { roomCode: currentRoom, delta: currentText.slice(lastSentText.length) });
+                    const delta = currentText.slice(lastSentText.length);
+                    socket.emit('text-delta', { roomCode: currentRoom, delta: delta });
                     lastSentText = currentText;
                 } else if (currentText.length === 0) {
                     socket.emit('text-reset', { roomCode: currentRoom });
@@ -177,26 +201,32 @@
             isProcessing = false;
         }
 
+        function adjustWPM(val) {
+            wpm = Math.max(40, Math.min(400, wpm + val));
+            document.getElementById('wpm-display').innerText = wpm;
+        }
+
         function applyTheme(theme) {
             const themes = { light: { bg: '#ffffff', text: '#000000' }, dark: { bg: '#000000', text: '#eeeeee' } };
             document.documentElement.style.setProperty('--bg', themes[theme].bg);
             document.documentElement.style.setProperty('--text', themes[theme].text);
         }
 
-        socket.on('connect', () => {
-            if (currentRoom) {
-                const isWriter = !document.getElementById('writer-ui').classList.contains('hidden');
-                socket.emit(isWriter ? 'reclaim-session' : 'join-session', currentRoom);
-            }
-        });
-
         function exitSession() { if(confirm(lang.confirm_exit)) location.href = window.location.origin + window.location.pathname; }
         function terminate() { if (confirm(lang.confirm_terminate)) socket.emit('stop-session', currentRoom); }
+        
         socket.on('session-ended', () => { alert(lang.alert_session_ended); location.href = window.location.origin + window.location.pathname; });
         socket.on('session-error', (msg) => {
             if (msg === 'Henda sessiónskotan er longu í brúk.') alert(lang.error_session_exists);
             else if (msg === 'Sessiónin finst ikki.') alert(lang.error_session_missing);
             else alert(msg);
+        });
+
+        socket.on('connect', () => {
+            if (currentRoom) {
+                const isWriter = !document.getElementById('writer-ui').classList.contains('hidden');
+                socket.emit(isWriter ? 'reclaim-session' : 'join-session', currentRoom);
+            }
         });
 
         const urlParams = new URLSearchParams(window.location.search);

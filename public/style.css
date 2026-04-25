@@ -3,6 +3,7 @@
     --text: #000000;
     --size: 60px;
     --accent: #007bff;
+    --neutral: #6c757d;
 }
 
 body {
@@ -11,9 +12,21 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
     transition: background 0.5s ease, color 0.5s ease;
-    overflow-x: hidden;
 }
 
+/* Layout */
+.setup-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 20vh;
+    min-height: 100vh;
+    gap: 15px;
+}
+
+.hidden { display: none !important; }
+
+/* Header & Reader UI */
 .header {
     background: rgba(128, 128, 128, 0.15);
     backdrop-filter: blur(10px);
@@ -23,21 +36,8 @@ body {
     display: flex;
     gap: 12px;
     align-items: center;
-    flex-wrap: wrap;
     z-index: 100;
-    border-bottom: 1px solid rgba(0,0,0,0.1);
 }
-
-.setup-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    gap: 15px;
-}
-
-.hidden { display: none !important; }
 
 #output {
     padding: 40px 20px;
@@ -48,6 +48,7 @@ body {
     padding-bottom: 60vh;
 }
 
+/* Orð animatión */
 .word {
     opacity: 0;
     display: inline;
@@ -60,6 +61,7 @@ body {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Indikatorar */
 #typing-indicator { display: none; margin-left: 10px; }
 .typing-dot {
     display: inline-block;
@@ -81,7 +83,7 @@ body {
 #pause-indicator {
     margin-left: auto;
     font-size: 14px;
-    color: #888;
+    color: var(--neutral);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -89,18 +91,35 @@ body {
     transition: opacity 0.5s;
 }
 
+/* Writer UI Elementir */
 .reader-badge {
     background: rgba(0, 123, 255, 0.1);
-    color: #007bff;
-    padding: 4px 10px;
+    color: var(--accent);
+    padding: 6px 14px;
     border-radius: 20px;
     font-size: 14px;
     margin-bottom: 10px;
     display: inline-block;
+    font-weight: bold;
 }
 
-textarea { width: 90%; height: 350px; font-size: 18px; margin-top: 10px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
+textarea { width: 90%; height: 350px; font-size: 18px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
 input, button, select { padding: 12px 18px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; }
 button { cursor: pointer; background: var(--accent); color: white; border: none; }
-.wpm-controls { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.05); padding: 5px 15px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); }
+.stop { background: #dc3545; }
+.wpm-controls { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.05); padding: 5px 15px; border-radius: 8px; }
+
+/* About Partur á Forsíðu */
+.setup-info {
+    max-width: 500px;
+    margin-top: 80px;
+    padding: 40px 20px;
+    text-align: center;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    line-height: 1.6;
+}
+.setup-info h2 { font-size: 1.3rem; margin-bottom: 15px; }
+.setup-info p { font-size: 1rem; color: #444; margin-bottom: 15px; }
+.footer-note { font-size: 0.85rem; opacity: 0.7; margin-top: 30px; font-style: italic; }
+
 #qrcode { margin-top: 20px; background: white; padding: 15px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
