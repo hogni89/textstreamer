@@ -13,32 +13,20 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             margin: 0; transition: background 0.3s, color 0.3s; overflow-x: hidden; 
         }
-        
         .header { 
             background: rgba(128, 128, 128, 0.15); backdrop-filter: blur(10px);
             padding: 10px; position: sticky; top: 0; display: flex; gap: 15px; 
             align-items: center; justify-content: center; z-index: 100; border-bottom: 1px solid rgba(0,0,0,0.1); 
         }
-
         .setup-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 15px; }
         .hidden { display: none !important; }
-        
-        #output { 
-            padding: 40px 20px; font-size: var(--size); line-height: 1.5; 
-            white-space: pre-wrap; word-wrap: break-word; 
-            padding-bottom: 75vh; 
-        }
-        
+        #output { padding: 40px 20px; font-size: var(--size); line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; padding-bottom: 75vh; }
         textarea { width: 90%; height: 300px; font-size: 18px; margin-top: 20px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
         input, button, select { padding: 12px 18px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; }
-        
         button { cursor: pointer; background: #007bff; color: white; border: none; }
-        button:active { opacity: 0.8; }
-        
         .wpm-controls { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.05); padding: 5px 15px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); }
         .stop { background: #dc3545; }
         .exit-btn { background: #6c757d; }
-        
         #qrcode { margin-top: 20px; background: white; padding: 15px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
     </style>
 </head>
@@ -46,7 +34,6 @@
 
     <div id="setup" class="setup-container">
         <h1>Samkomu Streamer</h1>
-        <p>Skriva eina kotu fyri at byrja</p>
         <input type="text" id="roomCode" placeholder="T.d. 1234" autocomplete="off">
         <div style="display:flex; gap:10px;">
             <button onclick="init('writer')">Stovna Sessión</button>
@@ -58,7 +45,7 @@
         <h2>Sessión: <span id="active-code"></span></h2>
         <div id="qrcode"></div>
         <br>
-        <textarea id="writer-input" placeholder="Byrja at skriva ella pasta tekst her..."></textarea>
+        <textarea id="writer-input" placeholder="Skriva ella pasta her..."></textarea>
         <br><br>
         <button class="stop" onclick="terminate()">Enda Sessión fyri øll</button>
     </div>
@@ -66,78 +53,97 @@
     <div id="reader-ui" class="hidden">
         <div class="header">
             <button class="exit-btn" onclick="exitSession()">🏠 Út</button>
-            
             <select onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
-                <option value="40">Lítil tekstur</option>
-                <option value="60" selected>Miðal tekstur</option>
-                <option value="90">Stórur tekstur</option>
+                <option value="40">Lítil</option>
+                <option value="60" selected>Miðal</option>
+                <option value="90">Stórur</option>
                 <option value="120">Risastórt</option>
             </select>
-
             <select onchange="applyTheme(this.value)">
-                <option value="light">Ljóst Tema</option>
-                <option value="dark">Svart Tema</option>
+                <option value="light">Ljóst</option>
+                <option value="dark">Svart</option>
                 <option value="sepia">Sepia</option>
             </select>
-            
             <div class="wpm-controls">
                 <span>WPM: <b id="wpm-display">160</b></span>
                 <button onclick="adjustWPM(-10)">-</button>
                 <button onclick="adjustWPM(10)">+</button>
             </div>
         </div>
-        
         <div id="output"></div>
     </div>
 
     <script>
         const socket = io();
         
-        // Variablar defineraðir ovast fyri at sleppa undan Initialization feili
+        // --- ERROR LOGGING BYRJAR ---
+        window.onerror = function(message, source, lineno, colno, error) {
+            if (socket && socket.connected) {
+                socket.emit('client-error', {
+                    message: message,
+                    line: lineno,
+                    column: colno,
+                    url: source,
+                    userAgent: navigator.userAgent
+                });
+            }
+            return false;
+        };
+        window.onunhandledrejection = function(event) {
+            if (socket && socket.connected) {
+                socket.emit('client-error', {
+                    message: "Unhandled Promise: " + event.reason,
+                    type: "promise_rejection"
+                });
+            }
+        };
+        // --- ERROR LOGGING ENDAR ---
+
         let currentRoom = "";
         let wpm = 160;
         let textQueue = [];
         let isProcessing = false;
         let fullTextReceived = "";
 
-        // US2: Stovna ella Join
         function init(role) {
-            const inputField = document.getElementById('roomCode');
-            currentRoom = inputField.value.trim();
-            
-            if (!currentRoom) return alert("Vinarliga skriva eina kotu!");
-
-            if (role === 'writer') {
-                socket.emit('create-session', currentRoom);
-            } else {
-                socket.emit('join-session', currentRoom);
-            }
+            currentRoom = document.getElementById('roomCode').value.trim();
+            if (!currentRoom) return alert("Skriva eina kotu!");
+            if (role === 'writer') socket.emit('create-session', currentRoom);
+            else socket.emit('join-session', currentRoom);
         }
 
-        // Server svarar
         socket.on('session-created', (roomCode) => {
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('writer-ui').classList.remove('hidden');
             document.getElementById('active-code').innerText = roomCode;
-            
             new QRCode(document.getElementById("qrcode"), {
                 text: window.location.origin + "?room=" + roomCode,
                 width: 160, height: 160
             });
-
             document.getElementById('writer-input').addEventListener('input', (e) => {
                 socket.emit('text-update', { roomCode: currentRoom, text: e.target.value });
             });
         });
 
-        socket.on('session-joined', (roomCode) => {
+        socket.on('session-joined', () => {
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('reader-ui').classList.remove('hidden');
         });
 
         socket.on('session-error', (msg) => alert(msg));
 
-        // Personalisering
+        socket.on('connect', () => {
+            if (currentRoom) {
+                const isWriter = !document.getElementById('writer-ui').classList.contains('hidden');
+                if (isWriter) socket.emit('reclaim-session', currentRoom);
+                else socket.emit('join-session', currentRoom);
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && !socket.connected) socket.connect();
+        });
+
         function adjustWPM(val) {
             wpm = Math.max(10, wpm + val);
             document.getElementById('wpm-display').innerText = wpm;
@@ -154,35 +160,24 @@
         }
 
         function exitSession() {
-            if(confirm("Vilt tú fara aftur til forsíðuna?")) location.href = window.location.origin + window.location.pathname;
+            if(confirm("Vilt tú fara út?")) location.href = window.location.origin + window.location.pathname;
         }
 
-        // US6: Smooth Auto-scroll
         function smoothScroll() {
-            const buffer = window.innerHeight * 0.45; 
+            const buffer = window.innerHeight * 0.45;
             const targetY = document.body.scrollHeight - window.innerHeight + buffer;
-            
-            if (window.scrollY < targetY - 30) {
-                window.scrollBy({
-                    top: 50, 
-                    behavior: 'smooth'
-                });
-            }
+            if (window.scrollY < targetY - 30) window.scrollBy({ top: 50, behavior: 'smooth' });
         }
 
-        // US4: Orð fyri orð
         async function processQueue() {
             if (isProcessing || textQueue.length === 0) return;
             isProcessing = true;
             const out = document.getElementById('output');
-
             while (textQueue.length > 0) {
                 const chunk = textQueue.shift();
                 const words = chunk.split(/(\s+)/);
-
                 for (let word of words) {
                     out.innerText += word;
-                    
                     if (word.trim()) {
                         let delay = (60 / wpm) * 1000;
                         await new Promise(r => setTimeout(r, delay));
@@ -206,15 +201,14 @@
         });
 
         function terminate() {
-            if (confirm("Vilt tú steðga sessiónini fyri øll?")) socket.emit('stop-session', currentRoom);
+            if (confirm("Vilt tú steðga sessiónini?")) socket.emit('stop-session', currentRoom);
         }
         
         socket.on('session-ended', () => {
-            alert("Sessiónin er endað.");
+            alert("Sessión endað.");
             location.href = window.location.origin + window.location.pathname;
         });
 
-        // Tjekka URL fyri QR-auto join
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) {
             document.getElementById('roomCode').value = urlParams.get('room');
