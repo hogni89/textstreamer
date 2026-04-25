@@ -7,83 +7,47 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        :root { 
-            --bg: #ffffff; 
-            --text: #000000; 
-            --size: 50px; 
-        }
-        
+        :root { --bg: #ffffff; --text: #000000; --size: 60px; }
         body { 
-            background: var(--bg); 
-            color: var(--text); 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            margin: 0; 
-            transition: background 0.3s, color 0.3s;
-            overflow-x: hidden;
+            background: var(--bg); color: var(--text); 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; transition: 0.3s; overflow-x: hidden; 
         }
         
-        /* Header / Menu */
         .header { 
-            background: rgba(128, 128, 128, 0.15); 
-            backdrop-filter: blur(5px);
-            padding: 10px; 
-            position: sticky; 
-            top: 0; 
-            display: flex; 
-            gap: 10px; 
-            align-items: center; 
-            flex-wrap: wrap; 
-            z-index: 100; 
-            border-bottom: 1px solid rgba(0,0,0,0.1); 
+            background: rgba(128, 128, 128, 0.15); backdrop-filter: blur(10px);
+            padding: 10px; position: sticky; top: 0; display: flex; gap: 15px; 
+            align-items: center; justify-content: center; z-index: 100; border-bottom: 1px solid rgba(0,0,0,0.1); 
         }
 
-        /* Setup / Login */
-        .setup-container { 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh; 
-            gap: 15px; 
-        }
-
+        .setup-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 15px; }
         .hidden { display: none !important; }
         
-        /* Tekst vísari */
         #output { 
-            padding: 20px; 
-            font-size: var(--size); 
-            line-height: 1.6; 
-            white-space: pre-wrap; 
-            word-wrap: break-word; 
-            min-height: 20vh;
-            /* Padding í botninum ger at teksturin kann rulla upp á miðjan skermin */
-            padding-bottom: 50vh; 
-        }
-
-        #scroll-anchor {
-            height: 2px;
-            width: 100%;
+            padding: 40px 20px; font-size: var(--size); line-height: 1.5; 
+            white-space: pre-wrap; word-wrap: break-word; 
+            padding-bottom: 70vh; /* Pláss at rulla upp í miðjuna */
         }
         
-        /* UI Elements */
-        textarea { width: 90%; height: 250px; font-size: 18px; margin-top: 20px; padding: 15px; border-radius: 8px; border: 1px solid #ccc; }
-        input, button, select { padding: 12px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
-        button { cursor: pointer; background: #007bff; color: white; border: none; font-weight: bold; }
-        button.stop { background: #dc3545; }
+        textarea { width: 90%; height: 300px; font-size: 18px; margin-top: 20px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
+        input, button, select { padding: 12px 18px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; }
         
-        #qrcode { margin-top: 20px; background: white; padding: 15px; border-radius: 10px; display: inline-block; }
-        .status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; }
+        .wpm-controls { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.05); padding: 5px 15px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); }
+        .stop { background: #dc3545; }
+        .exit-btn { background: #6c757d; }
+        
+        #qrcode { margin-top: 20px; background: white; padding: 15px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
 
     <div id="setup" class="setup-container">
         <h1>Samkomu Streamer</h1>
-        <input type="text" id="roomCode" placeholder="Sessiónskota (t.d. 1234)">
+        <input type="text" id="roomCode" placeholder="Sessiónskota">
         <div style="display:flex; gap:10px;">
-            <button onclick="init('writer')">Stovna (Skribentur)</button>
-            <button onclick="init('reader')">Join (Lesari)</button>
+            <button onclick="init('writer')">Stovna Sessión</button>
+            <button onclick="init('reader')">Join Sessión</button>
         </div>
     </div>
 
@@ -98,64 +62,44 @@
 
     <div id="reader-ui" class="hidden">
         <div class="header">
-            <span id="conn-status"><span class="status-dot" style="background: #28a745;"></span> Online</span>
+            <button class="exit-btn" onclick="exitSession()">🏠 Út</button>
+            
             <select onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
-                <option value="30">Lítil</option>
-                <option value="50" selected>Miðal</option>
-                <option value="80">Stórur</option>
-                <option value="120">Ekstra Stórur</option>
+                <option value="40">Lítil</option>
+                <option value="60" selected>Miðal</option>
+                <option value="90">Stórur</option>
+                <option value="120">Risastórt</option>
             </select>
+
             <select onchange="applyTheme(this.value)">
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
+                <option value="light">Ljóst</option>
+                <option value="dark">Svart</option>
                 <option value="sepia">Sepia</option>
             </select>
-            <select id="mode-select" onchange="displayMode = this.value">
-                <option value="letter">Bókstav fyri bókstav</option>
-                <option value="word">Orð fyri orð</option>
-                <option value="instant">Alt í senn</option>
-            </select>
+            
+            <div class="wpm-controls">
+                <span>WPM: <b id="wpm-display">160</b></span>
+                <button onclick="adjustWPM(-10)">-</button>
+                <button onclick="adjustWPM(10)">+</button>
+            </div>
         </div>
         
         <div id="output"></div>
-        <div id="scroll-anchor"></div>
     </div>
 
     <script>
         const socket = io();
         let currentRoom = "";
-        let displayMode = "letter";
+        let wpm = 160;
         let textQueue = [];
         let isProcessing = false;
         let fullTextReceived = "";
 
-        // US2: Stovna/Join Sessión
-        function init(role) {
-            currentRoom = document.getElementById('roomCode').value;
-            if (!currentRoom) return alert("Vinarliga skriva eina sessiónskotu!");
-
-            socket.emit('join-session', currentRoom);
-            document.getElementById('setup').classList.add('hidden');
-
-            if (role === 'writer') {
-                document.getElementById('writer-ui').classList.remove('hidden');
-                document.getElementById('active-code').innerText = currentRoom;
-                // QR koda vísir til somu síðu við ?room= parameturi
-                new QRCode(document.getElementById("qrcode"), {
-                    text: window.location.origin + "?room=" + currentRoom,
-                    width: 160, height: 160
-                });
-
-                // US1: Send tekst so hvørt
-                document.getElementById('writer-input').addEventListener('input', (e) => {
-                    socket.emit('text-update', { roomCode: currentRoom, text: e.target.value });
-                });
-            } else {
-                document.getElementById('reader-ui').classList.remove('hidden');
-            }
+        function adjustWPM(val) {
+            wpm = Math.max(10, wpm + val);
+            document.getElementById('wpm-display').innerText = wpm;
         }
 
-        // US4: Themes
         function applyTheme(theme) {
             const themes = {
                 light: { bg: '#ffffff', text: '#000000' },
@@ -166,77 +110,88 @@
             document.documentElement.style.setProperty('--text', themes[theme].text);
         }
 
-        // US4, US6: Smooth Scrolling & Display Logic
+        function exitSession() {
+            if(confirm("Vilt tú fara aftur til forsíðuna?")) location.href = window.location.origin + window.location.pathname;
+        }
+
+        function init(role) {
+            currentRoom = document.getElementById('roomCode').value;
+            if (!currentRoom) return alert("Skriva eina kotu!");
+            socket.emit('join-session', currentRoom);
+            document.getElementById('setup').classList.add('hidden');
+
+            if (role === 'writer') {
+                document.getElementById('writer-ui').classList.remove('hidden');
+                document.getElementById('active-code').innerText = currentRoom;
+                new QRCode(document.getElementById("qrcode"), {
+                    text: window.location.origin + "?room=" + currentRoom,
+                    width: 160, height: 160
+                });
+                document.getElementById('writer-input').addEventListener('input', (e) => {
+                    socket.emit('text-update', { roomCode: currentRoom, text: e.target.value });
+                });
+            } else {
+                document.getElementById('reader-ui').classList.remove('hidden');
+            }
+        }
+
+        // Smooth Auto-scroll funksjón
+        function smoothScroll() {
+            const buffer = window.innerHeight * 0.4; // Vit vilja hava tekstin ca. mitt á skermin
+            const targetY = document.body.scrollHeight - window.innerHeight + buffer;
+            
+            // Rulla spakuliga niður um vit eru komin ov langt niður
+            if (window.scrollY < targetY - 50) {
+                window.scrollBy({
+                    top: 40, // Hvussu nógv vit rulla pr. "step"
+                    behavior: 'smooth'
+                });
+            }
+        }
+
         async function processQueue() {
             if (isProcessing || textQueue.length === 0) return;
             isProcessing = true;
-            
             const out = document.getElementById('output');
-            const anchor = document.getElementById('scroll-anchor');
 
             while (textQueue.length > 0) {
                 const chunk = textQueue.shift();
-                
-                if (displayMode === "instant") {
-                    out.innerText += chunk;
-                    anchor.scrollIntoView({ behavior: "smooth", block: "end" });
-                } 
-                else if (displayMode === "word") {
-                    const words = chunk.split(/(\s+)/);
-                    for (let word of words) {
-                        out.innerText += word;
-                        if (word.trim()) {
-                            await new Promise(r => setTimeout(r, 120));
-                            anchor.scrollIntoView({ behavior: "smooth", block: "end" });
-                        }
-                    }
-                } 
-                else { // letter mode
-                    for (let char of chunk) {
-                        out.innerText += char;
-                        // Rulla bara fyri hvørji 5 tekn fyri at minka um "jitter"
-                        if (char === " " || out.innerText.length % 5 === 0) {
-                            anchor.scrollIntoView({ behavior: "auto", block: "end" });
-                        }
-                        await new Promise(r => setTimeout(r, 30));
+                const words = chunk.split(/(\s+)/); // Behold spaces and linebreaks
+
+                for (let word of words) {
+                    out.innerText += word;
+                    
+                    if (word.trim()) {
+                        let delay = (60 / wpm) * 1000;
+                        await new Promise(r => setTimeout(r, delay));
+                        smoothScroll();
                     }
                 }
-                // Tryggja endaliga rulling eftir hvønn batch
-                anchor.scrollIntoView({ behavior: "smooth", block: "end" });
             }
             isProcessing = false;
         }
 
-        // Móttøka av teksti (US3)
         socket.on('text-receive', (newFullText) => {
             if (newFullText.length > fullTextReceived.length) {
                 const newChunk = newFullText.slice(fullTextReceived.length);
                 textQueue.push(newChunk);
                 fullTextReceived = newFullText;
                 processQueue();
+            } else {
+                fullTextReceived = newFullText;
+                document.getElementById('output').innerText = newFullText;
             }
         });
 
-        // Samband status (US5)
-        socket.on('disconnect', () => {
-            document.getElementById('conn-status').innerHTML = '<span class="status-dot" style="background: #dc3545;"></span> Offline - Reconnecting...';
-        });
-        socket.on('connect', () => {
-            if(currentRoom) document.getElementById('conn-status').innerHTML = '<span class="status-dot" style="background: #28a745;"></span> Online';
-        });
-
-        // Steðga sessión (US7)
         function terminate() {
-            if (confirm("Vilt tú steðga stroymingini fyri øll?")) {
-                socket.emit('stop-session', currentRoom);
-            }
+            if (confirm("Vilt tú steðga sessiónini fyri øll?")) socket.emit('stop-session', currentRoom);
         }
+        
         socket.on('session-ended', () => {
-            alert("Skribenturin hevur steðgað sessiónini.");
+            alert("Sessiónin er endað.");
             location.href = window.location.origin + window.location.pathname;
         });
 
-        // Automatiskt join via URL (QR koda)
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) {
             document.getElementById('roomCode').value = urlParams.get('room');
