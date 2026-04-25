@@ -14,25 +14,31 @@
             margin: 0; transition: 0.3s; overflow-x: hidden; 
         }
         
+        /* Header stýring */
         .header { 
             background: rgba(128, 128, 128, 0.15); backdrop-filter: blur(10px);
             padding: 10px; position: sticky; top: 0; display: flex; gap: 15px; 
             align-items: center; justify-content: center; z-index: 100; border-bottom: 1px solid rgba(0,0,0,0.1); 
         }
 
+        /* Startskermur */
         .setup-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 15px; }
         .hidden { display: none !important; }
         
+        /* Tekst vísari */
         #output { 
             padding: 40px 20px; font-size: var(--size); line-height: 1.5; 
             white-space: pre-wrap; word-wrap: break-word; 
-            padding-bottom: 70vh; /* Pláss at rulla upp í miðjuna */
+            padding-bottom: 75vh; /* Tryggjar pláss til smooth scroll */
         }
         
+        /* Knøttar og Felt */
         textarea { width: 90%; height: 300px; font-size: 18px; margin-top: 20px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
         input, button, select { padding: 12px 18px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; }
         
         button { cursor: pointer; background: #007bff; color: white; border: none; }
+        button:active { opacity: 0.8; }
+        
         .wpm-controls { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.05); padding: 5px 15px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); }
         .stop { background: #dc3545; }
         .exit-btn { background: #6c757d; }
@@ -44,7 +50,8 @@
 
     <div id="setup" class="setup-container">
         <h1>Samkomu Streamer</h1>
-        <input type="text" id="roomCode" placeholder="Sessiónskota">
+        <p>Skriva eina kotu fyri at byrja</p>
+        <input type="text" id="roomCode" placeholder="T.d. 1234" autocomplete="off">
         <div style="display:flex; gap:10px;">
             <button onclick="init('writer')">Stovna Sessión</button>
             <button onclick="init('reader')">Join Sessión</button>
@@ -65,15 +72,15 @@
             <button class="exit-btn" onclick="exitSession()">🏠 Út</button>
             
             <select onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
-                <option value="40">Lítil</option>
-                <option value="60" selected>Miðal</option>
-                <option value="90">Stórur</option>
+                <option value="40">Lítil tekstur</option>
+                <option value="60" selected>Miðal tekstur</option>
+                <option value="90">Stórur tekstur</option>
                 <option value="120">Risastórt</option>
             </select>
 
             <select onchange="applyTheme(this.value)">
-                <option value="light">Ljóst</option>
-                <option value="dark">Svart</option>
+                <option value="light">Ljóst Tema</option>
+                <option value="dark">Svart Tema</option>
                 <option value="sepia">Sepia</option>
             </select>
             
@@ -95,6 +102,45 @@
         let isProcessing = false;
         let fullTextReceived = "";
 
+        // US2: Stovna ella Join (við validering frá server)
+        function init(role) {
+            currentRoom = document.getElementById('roomCode').value.trim();
+            if (!currentRoom) return alert("Vinarliga skriva eina kotu!");
+
+            if (role === 'writer') {
+                socket.emit('create-session', currentRoom);
+            } else {
+                socket.emit('join-session', currentRoom);
+            }
+        }
+
+        // Server svarar upp á stovning
+        socket.on('session-created', (roomCode) => {
+            document.getElementById('setup').classList.add('hidden');
+            document.getElementById('writer-ui').classList.remove('hidden');
+            document.getElementById('active-code').innerText = roomCode;
+            
+            // Generera QR-kotu
+            new QRCode(document.getElementById("qrcode"), {
+                text: window.location.origin + "?room=" + roomCode,
+                width: 160, height: 160
+            });
+
+            document.getElementById('writer-input').addEventListener('input', (e) => {
+                socket.emit('text-update', { roomCode: currentRoom, text: e.target.value });
+            });
+        });
+
+        // Server svarar upp á join
+        socket.on('session-joined', (roomCode) => {
+            document.getElementById('setup').classList.add('hidden');
+            document.getElementById('reader-ui').classList.remove('hidden');
+        });
+
+        // Feilmelding (t.d. upptikin kota)
+        socket.on('session-error', (msg) => alert(msg));
+
+        // WPM og Themes
         function adjustWPM(val) {
             wpm = Math.max(10, wpm + val);
             document.getElementById('wpm-display').innerText = wpm;
@@ -114,41 +160,20 @@
             if(confirm("Vilt tú fara aftur til forsíðuna?")) location.href = window.location.origin + window.location.pathname;
         }
 
-        function init(role) {
-            currentRoom = document.getElementById('roomCode').value;
-            if (!currentRoom) return alert("Skriva eina kotu!");
-            socket.emit('join-session', currentRoom);
-            document.getElementById('setup').classList.add('hidden');
-
-            if (role === 'writer') {
-                document.getElementById('writer-ui').classList.remove('hidden');
-                document.getElementById('active-code').innerText = currentRoom;
-                new QRCode(document.getElementById("qrcode"), {
-                    text: window.location.origin + "?room=" + currentRoom,
-                    width: 160, height: 160
-                });
-                document.getElementById('writer-input').addEventListener('input', (e) => {
-                    socket.emit('text-update', { roomCode: currentRoom, text: e.target.value });
-                });
-            } else {
-                document.getElementById('reader-ui').classList.remove('hidden');
-            }
-        }
-
-        // Smooth Auto-scroll funksjón
+        // US6: Smooth Auto-scroll
         function smoothScroll() {
-            const buffer = window.innerHeight * 0.4; // Vit vilja hava tekstin ca. mitt á skermin
+            const buffer = window.innerHeight * 0.45; // Miðja tekstin á skermin
             const targetY = document.body.scrollHeight - window.innerHeight + buffer;
             
-            // Rulla spakuliga niður um vit eru komin ov langt niður
-            if (window.scrollY < targetY - 50) {
+            if (window.scrollY < targetY - 30) {
                 window.scrollBy({
-                    top: 40, // Hvussu nógv vit rulla pr. "step"
+                    top: 50, 
                     behavior: 'smooth'
                 });
             }
         }
 
+        // US4: Orð fyri orð vísing
         async function processQueue() {
             if (isProcessing || textQueue.length === 0) return;
             isProcessing = true;
@@ -156,7 +181,7 @@
 
             while (textQueue.length > 0) {
                 const chunk = textQueue.shift();
-                const words = chunk.split(/(\s+)/); // Behold spaces and linebreaks
+                const words = chunk.split(/(\s+)/); // Splitta orð men goym millumrúm/linjubrot
 
                 for (let word of words) {
                     out.innerText += word;
@@ -178,6 +203,7 @@
                 fullTextReceived = newFullText;
                 processQueue();
             } else {
+                // Sletting: Uppdatera vísaran beinanvegin
                 fullTextReceived = newFullText;
                 document.getElementById('output').innerText = newFullText;
             }
@@ -192,6 +218,7 @@
             location.href = window.location.origin + window.location.pathname;
         });
 
+        // Tjekka QR-parametur í URL
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) {
             document.getElementById('roomCode').value = urlParams.get('room');
