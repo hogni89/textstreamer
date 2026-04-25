@@ -5,68 +5,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Samkomu Streamer</title>
     <link rel="stylesheet" href="style.css">
+    <script src="lang.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
     <div id="setup" class="setup-container">
-        <h1>Samkomu Streamer</h1>
-        <input type="text" id="roomCode" placeholder="T.d. 1234" autocomplete="off">
+        <h1 id="txt-setup-title"></h1>
+        <input type="text" id="roomCode" autocomplete="off">
         <div style="display:flex; gap:10px;">
-            <button onclick="init('writer')">Stovna Sessión</button>
-            <button onclick="init('reader')">Join Sessión</button>
+            <button onclick="init('writer')" id="txt-btn-create"></button>
+            <button onclick="init('reader')" id="txt-btn-join"></button>
         </div>
     </div>
 
     <div id="writer-ui" class="hidden" style="padding: 20px; text-align: center;">
-        <h2>Sessión: <span id="active-code"></span></h2>
+        <div class="reader-badge">👁️ <span id="reader-count">0</span> <span id="txt-readers-online"></span></div>
+        <h2><span id="txt-writer-header"></span><span id="active-code"></span></h2>
         <div id="qrcode"></div>
         <br>
-        <textarea id="writer-input" placeholder="Byrja at skriva..."></textarea>
+        <textarea id="writer-input"></textarea>
         <br><br>
-        <button class="stop" onclick="terminate()">Enda Sessión fyri øll</button>
+        <button class="stop" onclick="terminate()" id="txt-writer-terminate"></button>
     </div>
 
     <div id="reader-ui" class="hidden">
         <div class="header">
-            <button class="exit-btn" onclick="exitSession()">🏠</button>
-            <select onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
-                <option value="40">Lítil</option>
-                <option value="60" selected>Miðal</option>
-                <option value="90">Stórur</option>
-            </select>
-            <select onchange="applyTheme(this.value)">
-                <option value="light">Ljóst</option>
-                <option value="dark">Svart</option>
-            </select>
+            <button class="exit-btn" onclick="exitSession()" id="txt-reader-exit"></button>
+            <select id="size-select" onchange="document.documentElement.style.setProperty('--size', this.value + 'px')">
+                </select>
+            <select id="theme-select" onchange="applyTheme(this.value)">
+                </select>
             <div class="wpm-controls">
                 <span>WPM: <b id="wpm-display">160</b></span>
                 <button onclick="adjustWPM(-10)">-</button>
                 <button onclick="adjustWPM(10)">+</button>
             </div>
-            <div id="pause-indicator"><span class="dot"></span> <span>Steðgur í talu</span></div>
+            <div id="pause-indicator"><span class="dot"></span> <span id="txt-reader-pause"></span></div>
+            <div id="typing-indicator"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>
         </div>
         <div id="output"></div>
     </div>
 
     <script>
         const socket = io();
-        let currentRoom = "";
-        let wpm = 160;
-        let textQueue = [];
-        let isProcessing = false;
-        let fullTextReceived = "";
-        let lastSentText = "";
-        let pauseTimer = null;
+        let currentRoom = "", wpm = 160, textQueue = [], isProcessing = false;
+        let fullTextReceived = "", lastSentText = "", pauseTimer = null, typingTimer = null;
+        let wakeLock = null;
 
-        window.onerror = (message, source, lineno) => {
-            if (socket.connected) socket.emit('client-error', { message, line: lineno, url: source });
-        };
+        // --- SETA TEKSTIR INN TÁ APPIN BYRJAR ---
+        function applyLanguage() {
+            document.title = lang.title;
+            document.getElementById('txt-setup-title').innerText = lang.setup_title;
+            document.getElementById('roomCode').placeholder = lang.setup_placeholder;
+            document.getElementById('txt-btn-create').innerText = lang.btn_create;
+            document.getElementById('txt-btn-join').innerText = lang.btn_join;
+            document.getElementById('txt-readers-online').innerText = lang.readers_online;
+            document.getElementById('txt-writer-header').innerText = lang.writer_header;
+            document.getElementById('writer-input').placeholder = lang.writer_placeholder;
+            document.getElementById('txt-writer-terminate').innerText = lang.writer_terminate;
+            document.getElementById('txt-reader-exit').innerText = lang.reader_exit;
+            document.getElementById('txt-reader-pause').innerText = lang.reader_pause;
+
+            // Fylla select-boksarnar
+            const sizeS = document.getElementById('size-select');
+            sizeS.innerHTML = `
+                <option value="40">${lang.reader_size_small}</option>
+                <option value="60" selected>${lang.reader_size_medium}</option>
+                <option value="90">${lang.reader_size_large}</option>`;
+
+            const themeS = document.getElementById('theme-select');
+            themeS.innerHTML = `
+                <option value="light">${lang.reader_theme_light}</option>
+                <option value="dark">${lang.reader_theme_dark}</option>`;
+        }
+
+        // Koyr Language fuksjónina beinanvegin
+        applyLanguage();
+
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
+            }
+        }
 
         function init(role) {
             currentRoom = document.getElementById('roomCode').value.trim();
-            if (!currentRoom) return alert("Skriva eina kotu!");
+            if (!currentRoom) return alert(lang.alert_no_code);
             socket.emit(role === 'writer' ? 'create-session' : 'join-session', currentRoom);
         }
 
@@ -74,49 +100,87 @@
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('writer-ui').classList.remove('hidden');
             document.getElementById('active-code').innerText = roomCode;
-            new QRCode(document.getElementById("qrcode"), { text: window.location.origin + "?room=" + roomCode, width: 160, height: 160 });
+            const input = document.getElementById('writer-input');
+            input.focus();
+            new QRCode(document.getElementById("qrcode"), { text: window.location.origin + "?room=" + roomCode, width: 140, height: 140 });
             
-            document.getElementById('writer-input').addEventListener('input', (e) => {
+            input.addEventListener('input', (e) => {
                 const currentText = e.target.value;
                 if (currentText.length > lastSentText.length) {
-                    const delta = currentText.slice(lastSentText.length);
-                    socket.emit('text-delta', { roomCode: currentRoom, delta });
-                } else if (currentText.length < lastSentText.length) {
-                    socket.emit('text-reset', { roomCode: currentRoom, fullText: currentText });
+                    socket.emit('text-delta', { roomCode: currentRoom, delta: currentText.slice(lastSentText.length) });
+                    lastSentText = currentText;
+                } else if (currentText.length === 0) {
+                    socket.emit('text-reset', { roomCode: currentRoom });
+                    lastSentText = "";
+                } else {
+                    lastSentText = currentText;
                 }
-                lastSentText = currentText;
             });
         });
 
         socket.on('session-joined', () => {
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('reader-ui').classList.remove('hidden');
+            requestWakeLock();
         });
 
-        socket.on('session-error', (msg) => alert(msg));
+        socket.on('reader-count', (count) => {
+            document.getElementById('reader-count').innerText = count;
+        });
 
-        // Delta-móttøka hjá lesara
         socket.on('text-delta', (delta) => {
-            resetPauseTimer();
+            const indicator = document.getElementById('typing-indicator');
+            indicator.style.display = "block";
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => indicator.style.display = "none", 2000);
+            
+            const pIndicator = document.getElementById('pause-indicator');
+            if (pIndicator) pIndicator.style.opacity = "0";
+            clearTimeout(pauseTimer);
+            pauseTimer = setTimeout(() => { if (fullTextReceived.length > 0) pIndicator.style.opacity = "1"; }, 10000);
+
             textQueue.push(delta);
             fullTextReceived += delta;
             processQueue();
         });
 
-        socket.on('text-reset', (fullText) => {
-            resetPauseTimer();
-            textQueue = [];
-            fullTextReceived = fullText;
-            document.getElementById('output').innerText = fullText;
+        socket.on('text-reset', () => {
+            textQueue = []; fullTextReceived = "";
+            document.getElementById('output').innerHTML = '';
         });
 
-        function resetPauseTimer() {
-            const indicator = document.getElementById('pause-indicator');
-            if (indicator) indicator.style.opacity = "0";
-            clearTimeout(pauseTimer);
-            pauseTimer = setTimeout(() => {
-                if (indicator && fullTextReceived.length > 0) indicator.style.opacity = "1";
-            }, 10000);
+        async function processQueue() {
+            if (isProcessing || textQueue.length === 0) return;
+            isProcessing = true;
+            const out = document.getElementById('output');
+            while (textQueue.length > 0) {
+                const chunk = textQueue.shift();
+                const tokens = chunk.split(/(\r\n|\n|\r|\s+)/);
+                for (let token of tokens) {
+                    if (!token) continue;
+                    const span = document.createElement('span');
+                    if (token === '\n' || token === '\r' || token === '\r\n') {
+                        span.innerHTML = '<br>';
+                    } else {
+                        span.className = 'word';
+                        span.innerText = token;
+                    }
+                    out.appendChild(span);
+                    if (token.trim()) {
+                        await new Promise(r => setTimeout(r, (60 / wpm) * 1000));
+                        const rect = out.getBoundingClientRect();
+                        const trigger = window.innerHeight * 0.8;
+                        if (rect.top + rect.height > trigger) window.scrollBy({ top: (rect.top + rect.height) - trigger, behavior: 'smooth' });
+                    }
+                }
+            }
+            isProcessing = false;
+        }
+
+        function applyTheme(theme) {
+            const themes = { light: { bg: '#ffffff', text: '#000000' }, dark: { bg: '#000000', text: '#eeeeee' } };
+            document.documentElement.style.setProperty('--bg', themes[theme].bg);
+            document.documentElement.style.setProperty('--text', themes[theme].text);
         }
 
         socket.on('connect', () => {
@@ -126,69 +190,17 @@
             }
         });
 
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && !socket.connected) socket.connect();
-        });
-
-        function adjustWPM(val) {
-            wpm = Math.max(10, wpm + val);
-            document.getElementById('wpm-display').innerText = wpm;
-        }
-
-        function applyTheme(theme) {
-            const themes = {
-                light: { bg: '#ffffff', text: '#000000' },
-                dark: { bg: '#000000', text: '#eeeeee' }
-            };
-            document.documentElement.style.setProperty('--bg', themes[theme].bg);
-            document.documentElement.style.setProperty('--text', themes[theme].text);
-        }
-
-        function exitSession() {
-            if(confirm("Vilt tú fara út?")) location.href = window.location.origin + window.location.pathname;
-        }
-
-        function checkAndScroll() {
-            const out = document.getElementById('output');
-            const rect = out.getBoundingClientRect();
-            const triggerPoint = window.innerHeight * 0.8;
-            if (rect.top + rect.height > triggerPoint) {
-                window.scrollBy({ top: (rect.top + rect.height) - triggerPoint, behavior: 'smooth' });
-            }
-        }
-
-        async function processQueue() {
-            if (isProcessing || textQueue.length === 0) return;
-            isProcessing = true;
-            const out = document.getElementById('output');
-            while (textQueue.length > 0) {
-                const chunk = textQueue.shift();
-                const words = chunk.split(/(\s+)/);
-                for (let word of words) {
-                    out.innerText += word;
-                    if (word.trim()) {
-                        await new Promise(r => setTimeout(r, (60 / wpm) * 1000));
-                        checkAndScroll();
-                    }
-                }
-            }
-            isProcessing = false;
-        }
-
-        function terminate() {
-            if (confirm("Vilt tú steðga sessiónini?")) socket.emit('stop-session', currentRoom);
-        }
-        
-        socket.on('session-ended', () => {
-            alert("Sessión endað.");
-            location.href = window.location.origin + window.location.pathname;
+        function exitSession() { if(confirm(lang.confirm_exit)) location.href = window.location.origin + window.location.pathname; }
+        function terminate() { if (confirm(lang.confirm_terminate)) socket.emit('stop-session', currentRoom); }
+        socket.on('session-ended', () => { alert(lang.alert_session_ended); location.href = window.location.origin + window.location.pathname; });
+        socket.on('session-error', (msg) => {
+            if (msg === 'Henda sessiónskotan er longu í brúk.') alert(lang.error_session_exists);
+            else if (msg === 'Sessiónin finst ikki.') alert(lang.error_session_missing);
+            else alert(msg);
         });
 
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('room')) {
-            document.getElementById('roomCode').value = urlParams.get('room');
-            init('reader');
-        }
+        if (urlParams.has('room')) { document.getElementById('roomCode').value = urlParams.get('room'); init('reader'); }
     </script>
 </body>
 </html>

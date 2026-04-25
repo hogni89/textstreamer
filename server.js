@@ -14,14 +14,17 @@ app.use(express.static('public'));
 const activeSessions = new Map(); 
 const disconnectTimeouts = new Map();
 
+function updateReaderCount(roomCode) {
+    const clients = io.sockets.adapter.rooms.get(roomCode);
+    const count = clients ? clients.size - 1 : 0;
+    io.to(roomCode).emit('reader-count', Math.max(0, count));
+}
+
 io.on('connection', (socket) => {
-    
-    // Logga feilir frá browserum hjá brúkarum til Render Logs
     socket.on('client-error', (errorInfo) => {
         console.error(`🔴 [BROWSER FEILUR] Frá ${socket.id}:`, JSON.stringify(errorInfo, null, 2));
     });
 
-    // Stovna sessión
     socket.on('create-session', (roomCode) => {
         if (activeSessions.has(roomCode)) {
             socket.emit('session-error', 'Henda sessiónskotan er longu í brúk.');
@@ -29,51 +32,55 @@ io.on('connection', (socket) => {
             activeSessions.set(roomCode, socket.id);
             socket.join(roomCode);
             socket.emit('session-created', roomCode);
-            console.log(`Sessión stovnað: ${roomCode}`);
         }
     });
 
-    // Join sessión
     socket.on('join-session', (roomCode) => {
         if (activeSessions.has(roomCode)) {
             socket.join(roomCode);
             socket.emit('session-joined', roomCode);
+            updateReaderCount(roomCode);
         } else {
             socket.emit('session-error', 'Sessiónin finst ikki.');
         }
     });
 
-    // Reclaim sessión (fyri iOS og reconnects)
     socket.on('reclaim-session', (roomCode) => {
         if (activeSessions.has(roomCode)) {
             activeSessions.set(roomCode, socket.id);
+            socket.join(roomCode);
             if (disconnectTimeouts.has(roomCode)) {
                 clearTimeout(disconnectTimeouts.get(roomCode));
                 disconnectTimeouts.delete(roomCode);
-                console.log(`Skribentur reclaimaði sessión: ${roomCode}`);
             }
+            updateReaderCount(roomCode);
         }
     });
 
-    // DELTA SENDING: Sendir bara broytingar
     socket.on('text-delta', ({ roomCode, delta }) => {
         if (activeSessions.get(roomCode) === socket.id) {
             socket.to(roomCode).emit('text-delta', delta);
         }
     });
 
-    // RESET SENDING: Um alt verður slettað ella rættað
-    socket.on('text-reset', ({ roomCode, fullText }) => {
+    socket.on('text-reset', ({ roomCode }) => {
         if (activeSessions.get(roomCode) === socket.id) {
-            socket.to(roomCode).emit('text-reset', fullText);
+            socket.to(roomCode).emit('text-reset');
         }
     });
 
-    // Steðga sessión
     socket.on('stop-session', (roomCode) => {
         if (activeSessions.get(roomCode) === socket.id) {
             io.to(roomCode).emit('session-ended');
             activeSessions.delete(roomCode);
+        }
+    });
+
+    socket.on('disconnecting', () => {
+        for (const roomCode of socket.rooms) {
+            if (activeSessions.has(roomCode)) {
+                setTimeout(() => updateReaderCount(roomCode), 100);
+            }
         }
     });
 
