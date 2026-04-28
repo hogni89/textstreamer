@@ -48,8 +48,8 @@
             <select id="size-select" onchange="document.documentElement.style.setProperty('--size', this.value + 'px')"></select>
             <select id="theme-select" onchange="applyTheme(this.value)"></select>
             <div class="wpm-controls">
-                <span>WPM: <b id="wpm-display">160</b></span>
                 <button onclick="adjustWPM(-10)">-</button>
+                <span>WPM: <b id="wpm-display">160</b></span>
                 <button onclick="adjustWPM(10)">+</button>
             </div>
             <div id="pause-indicator"><span class="dot"></span> <span id="txt-reader-pause"></span></div>
@@ -192,9 +192,18 @@
                     out.appendChild(span);
                     if (token.trim()) {
                         await new Promise(r => setTimeout(r, (60 / wpm) * 1000));
+                        
+                        // SCROLLING LOGIKKUR:
                         const rect = out.getBoundingClientRect();
-                        const trigger = window.innerHeight * 0.8;
-                        if (rect.top + rect.height > trigger) window.scrollBy({ top: (rect.top + rect.height) - trigger, behavior: 'smooth' });
+                        // Vit setu trigger til 95% av skermhæddini
+                        const trigger = window.innerHeight * 0.95; 
+                        
+                        if (rect.top + rect.height > trigger) {
+                            window.scrollBy({ 
+                                top: (rect.top + rect.height) - trigger, 
+                                behavior: 'smooth' 
+                            });
+                        }
                     }
                 }
             }
