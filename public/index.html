@@ -49,7 +49,7 @@
             <select id="theme-select" onchange="applyTheme(this.value)"></select>
             <div class="wpm-controls">
                 <button onclick="adjustWPM(-10)">-</button>
-                <span>WPM: <b id="wpm-display">160</b></span>
+                <span>WPM: <b id="wpm-display">200</b></span>
                 <button onclick="adjustWPM(10)">+</button>
             </div>
             <div id="pause-indicator"><span class="dot"></span> <span id="txt-reader-pause"></span></div>
@@ -60,7 +60,7 @@
 
     <script>
         const socket = io();
-        let currentRoom = "", wpm = 160, textQueue = [], isProcessing = false;
+        let currentRoom = "", wpm = 200, textQueue = [], isProcessing = false;
         let fullTextReceived = "", lastSentText = "", pauseTimer = null, typingTimer = null;
         let wakeLock = null;
 
