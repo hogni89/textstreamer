@@ -30,20 +30,20 @@ body {
 .header {
     background: rgba(128, 128, 128, 0.15);
     backdrop-filter: blur(10px);
-    padding: 6px 8px; /* Minkað frá 10px */
+    padding: 6px 8px;
     position: sticky;
     top: 0;
     display: flex;
-    gap: 6px; /* Minkað frá 12px so alt fær pláss */
+    gap: 6px;
     align-items: center;
     z-index: 100;
-    justify-content: space-between; /* Tryggjar at tingini spjaða seg rætt */
+    justify-content: space-between;
 }
 
 .header select {
-    padding: 8px 4px; /* Minni padding */
-    font-size: 14px;  /* Eitt sindur minni tekstur */
-    max-width: 120px;  /* Tryggjar at teir ikki verða ov breiðir */
+    padding: 8px 4px;
+    font-size: 14px;
+    max-width: 120px;
 }
 
 #output {
@@ -110,24 +110,39 @@ body {
     font-weight: bold;
 }
 
-textarea { width: 90%; height: 350px; font-size: 18px; padding: 15px; border-radius: 12px; border: 1px solid #ccc; }
-input, button, select { padding: 12px 18px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; font-weight: bold; }
+textarea { 
+    width: 100%; /* Broytt frá 90% so tað fyllir flex-kassarnar rætt */
+    box-sizing: border-box; /* Tryggjar at padding ikki brýtur breiddina */
+    height: 350px; 
+    font-size: 18px; 
+    padding: 15px; 
+    border-radius: 12px; 
+    border: 1px solid #ccc; 
+}
+
+input, button, select { 
+    padding: 12px 18px; 
+    font-size: 16px; 
+    border-radius: 8px; 
+    border: 1px solid #ccc; 
+    font-weight: bold; 
+}
 button { cursor: pointer; background: var(--accent); color: white; border: none; }
 .stop { background: #dc3545; }
 
 .wpm-controls {
     display: flex;
     align-items: center;
-    gap: 4px; /* Minni hol millum knapparnar */
+    gap: 4px;
     background: rgba(0,0,0,0.05);
     padding: 4px 8px;
     border-radius: 8px;
     font-size: 14px;
-    white-space: nowrap; /* Tryggjar at +/- ikki hoppar niður á næstu linju */
+    white-space: nowrap;
 }
 
 .wpm-controls button {
-    padding: 6px 15px; /* Minni knappar */
+    padding: 6px 15px;
     font-size: 16px;
 }
 
@@ -149,4 +164,11 @@ button { cursor: pointer; background: var(--accent); color: white; border: none;
 .setup-info p { font-size: 1rem; color: #444; margin-bottom: 15px; }
 .footer-note { font-size: 0.85rem; opacity: 0.7; margin-top: 30px; font-style: italic; }
 
-#qrcode { margin-top: 20px; background: white; padding: 15px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+#qrcode, #qrcode-ai { 
+    margin-top: 20px; 
+    background: white; 
+    padding: 15px; 
+    border-radius: 12px; 
+    display: inline-block; 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+}

@@ -1,6 +1,8 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 const server = http.createServer(app);
@@ -11,15 +13,20 @@ const io = new Server(server, {
     }
 });
 
+// Gemini Uppseting
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+
+app.get('/ping', (req, res) => {
+    console.log('Ping mót tikið - heldur sessiónini á lívi.');
+    res.status(200).send('pong');
+});
+
 app.use(express.static('public'));
 
 const activeSessions = new Map(); // roomCode -> socket.id hjá skribenti
 const disconnectTimeouts = new Map(); // roomCode -> timeout-ID
 
-/**
- * Sendir dagført tal av lesarum til øll í rúminum.
- * Skribenturin verður drigin frá, so vit bara telja tey, ið lurta/lesa.
- */
 function updateReaderCount(roomCode) {
     const clients = io.sockets.adapter.rooms.get(roomCode);
     const count = clients ? clients.size - 1 : 0;
@@ -56,7 +63,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Skribentur reclaim'ar sína sessión (t.d. um iPhone fer í sleep ella netið hoppar)
+    // Skribentur reclaim'ar sína sessión
     socket.on('reclaim-session', (roomCode) => {
         if (activeSessions.has(roomCode)) {
             activeSessions.set(roomCode, socket.id);
@@ -70,6 +77,25 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- NÝTT: AI BEHANDLING ---
+    socket.on('process-ai-text', async ({ roomCode, text }) => {
+        if (activeSessions.get(roomCode) === socket.id) {
+            try {
+                // Promptin til Gemini (kann tillagast eftir tørvi)
+                const prompt = `Tú ert ein málsligur hjálpari fyri deyv og tunghoyrd. Dikteringin fer fram á samkomum, evni er oftast andaligt og grunda á bíbliuna og kristnu trúnna - Tað kann koma fyri at vit tosa um annað, so sum lýsingar og hvat hendir í samfelagnum og í salinum gjøgnum vikuna. Rætta henda føroyska tekstin (sum er talu-til-tekst) fyri stavivillur og set teknseting (komma, punktum osfr.), so hann er lættur at lesa. Fjerna ískotin orð, so sum 'Øhh', og óneyðugar endurtøkur. Varðveit meiningina og málburðin. Goym kontekstin, og brúka hann til at gera dikteringina rættari og rættari. Svara BARA við rættaða tekstinum, onki annað: "${text}"`;
+                
+                const result = await model.generateContent(prompt);
+                const correctedText = result.response.text();
+                
+                socket.emit('ai-text-result', correctedText);
+            } catch (error) {
+                console.error("Gemini Feilur:", error);
+                // Um AI feilar (t.d. manglandi API lykil), senda vit bara "raw" tekstin
+                socket.emit('ai-text-result', text);
+            }
+        }
+    });
+
     // Delta sending: Sendir bara nýggja tekstbrotin víðari til lesararnar
     socket.on('text-delta', ({ roomCode, delta }) => {
         if (activeSessions.get(roomCode) === socket.id) {
@@ -77,7 +103,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Reinsa skermin hjá lesarum (um skribenturin slettar alt í textarea)
+    // Reinsa skermin hjá lesarum
     socket.on('text-reset', ({ roomCode }) => {
         if (activeSessions.get(roomCode) === socket.id) {
             socket.to(roomCode).emit('text-reset');
@@ -105,8 +131,6 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         for (let [roomCode, ownerId] of activeSessions.entries()) {
             if (ownerId === socket.id) {
-                // Skribenturin misti sambandið - vit bíða í 60 sek áðrenn vit sletta alt,
-                // so hann hevur kjans at reclaim'a (t.d. við reclaim-session).
                 const timeout = setTimeout(() => {
                     io.to(roomCode).emit('session-ended');
                     activeSessions.delete(roomCode);

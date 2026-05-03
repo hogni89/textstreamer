@@ -14,8 +14,10 @@
     <div id="setup" class="setup-container">
         <h1 id="txt-setup-title"></h1>
         <input type="text" id="roomCode" autocomplete="off">
-        <div style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px; flex-wrap: wrap; justify-content: center;">
             <button onclick="init('writer')" id="txt-btn-create"></button>
+            <!-- Nýggjur AI Knappur -->
+            <button onclick="init('writer-ai')" id="txt-btn-create-ai" style="background: #28a745;">Stovna við AI</button>
             <button onclick="init('reader')" id="txt-btn-join"></button>
         </div>
 
@@ -32,6 +34,7 @@
         </div>
     </div>
 
+    <!-- Vanligt Writer UI -->
     <div id="writer-ui" class="hidden" style="padding: 20px; text-align: center;">
         <div class="reader-badge">👁️ <span id="reader-count">0</span> <span id="txt-readers-online"></span></div>
         <h2><span id="txt-writer-header"></span><span id="active-code"></span></h2>
@@ -42,6 +45,26 @@
         <button class="stop" onclick="terminate()" id="txt-writer-terminate"></button>
     </div>
 
+    <!-- AI Writer UI -->
+    <div id="writer-ai-ui" class="hidden" style="padding: 20px; text-align: center;">
+        <div class="reader-badge">🤖 AI Rætting Virkin (<span id="reader-count-ai">0</span> <span id="txt-readers-online-ai"></span>)</div>
+        <h2><span id="txt-writer-header-ai"></span><span id="active-code-ai"></span></h2>
+        <div id="qrcode-ai"></div>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px;">
+            <div style="flex: 1; min-width: 300px;">
+                <h3 style="font-size: 16px;">Dikteraður tekstur (Raw)</h3>
+                <textarea id="ai-raw-input" placeholder="Byrja at diktera..."></textarea>
+            </div>
+            <div style="flex: 1; min-width: 300px;">
+                <h3 style="font-size: 16px;">Rættaður tekstur (Gemini)</h3>
+                <textarea id="ai-corrected-view" readonly style="background: rgba(0, 123, 255, 0.05); border: 2px solid var(--accent);"></textarea>
+            </div>
+        </div>
+        <br>
+        <button class="stop" onclick="terminate()" id="txt-writer-terminate-ai"></button>
+    </div>
+
+    <!-- Reader UI -->
     <div id="reader-ui" class="hidden">
         <div class="header">
             <button class="exit-btn" onclick="exitSession()" id="txt-reader-exit"></button>
@@ -60,24 +83,36 @@
 
     <script>
         const socket = io();
-        let currentRoom = "", wpm = 200, textQueue = [], isProcessing = false;
-        let fullTextReceived = "", lastSentText = "", pauseTimer = null, typingTimer = null;
-        let wakeLock = null;
+        let currentRoom = "", currentRole = "", wpm = 200, isProcessing = false;
+        let aiBuffer = "", lastSentText = "", fullTextReceived = "";
+        let textQueue = [], pauseTimer = null, typingTimer = null, wakeLock = null;
 
-        // --- SETA TEKSTIR INN ÚR LANG.JS ---
+        // --- MÁL & TEKSTIR ---
         function applyLanguage() {
             document.title = lang.title;
             document.getElementById('txt-setup-title').innerText = lang.setup_title;
             document.getElementById('roomCode').placeholder = lang.setup_placeholder;
             document.getElementById('txt-btn-create').innerText = lang.btn_create;
             document.getElementById('txt-btn-join').innerText = lang.btn_join;
+            
             document.getElementById('txt-readers-online').innerText = lang.readers_online;
-            document.getElementById('txt-writer-header').innerText = lang.writer_header;
-            document.getElementById('writer-input').placeholder = lang.writer_placeholder;
+            document.getElementById('txt-readers-online-ai').innerText = lang.readers_online;
+            
+            // Header tekstir í sessión
+            const wHeader = document.getElementById('txt-writer-header');
+            if(wHeader) wHeader.innerText = lang.writer_header;
+            const wHeaderAi = document.getElementById('txt-writer-header-ai');
+            if(wHeaderAi) wHeaderAi.innerText = lang.writer_header;
+            
+            const wInput = document.getElementById('writer-input');
+            if(wInput) wInput.placeholder = lang.writer_placeholder;
+            
             document.getElementById('txt-writer-terminate').innerText = lang.writer_terminate;
+            document.getElementById('txt-writer-terminate-ai').innerText = lang.writer_terminate;
+            
             document.getElementById('txt-reader-exit').innerText = lang.reader_exit;
             document.getElementById('txt-reader-pause').innerText = lang.reader_pause;
-            
+
             // About partur
             document.getElementById('txt-about-title').innerText = lang.about_title;
             document.getElementById('txt-about-p1').innerText = lang.about_p1;
@@ -86,8 +121,6 @@
             document.getElementById('txt-about-p4').innerText = lang.about_p4;
             document.getElementById('txt-about-p5').innerText = lang.about_p5;
             document.getElementById('txt-about-p6').innerText = lang.about_p6;
-            
-            // Ger GitHub linkið virkið
             document.getElementById('txt-about-p7').innerHTML = lang.about_p7.replace(
                 'https://github.com/hogni89/textstreamer', 
                 '<a href="https://github.com/hogni89/textstreamer" target="_blank" style="color:var(--accent)">GitHub</a>'
@@ -113,20 +146,40 @@
             }
         }
 
+        // --- INITIATIÓN ---
         function init(role) {
             currentRoom = document.getElementById('roomCode').value.trim();
+            currentRole = role;
             if (!currentRoom) return alert(lang.alert_no_code);
-            socket.emit(role === 'writer' ? 'create-session' : 'join-session', currentRoom);
+            socket.emit(role.startsWith('writer') ? 'create-session' : 'join-session', currentRoom);
         }
 
         socket.on('session-created', (roomCode) => {
             document.getElementById('setup').classList.add('hidden');
-            document.getElementById('writer-ui').classList.remove('hidden');
-            document.getElementById('active-code').innerText = roomCode;
+            
+            const isAI = (currentRole === 'writer-ai');
+            const uiId = isAI ? 'writer-ai-ui' : 'writer-ui';
+            const codeId = isAI ? 'active-code-ai' : 'active-code';
+            const qrId = isAI ? 'qrcode-ai' : 'qrcode';
+            
+            document.getElementById(uiId).classList.remove('hidden');
+            document.getElementById(codeId).innerText = roomCode;
+            
+            // Upprunaliga QR logikkin nýtt til bæði sýnini
+            document.getElementById(qrId).innerHTML = "";
+            new QRCode(document.getElementById(qrId), { text: window.location.origin + "?room=" + roomCode, width: 140, height: 140 });
+
+            if (isAI) {
+                setupAIListeners();
+            } else {
+                setupStandardListeners();
+            }
+        });
+
+        // --- VANLIGUR SKRIBENTUR ---
+        function setupStandardListeners() {
             const input = document.getElementById('writer-input');
             input.focus();
-            new QRCode(document.getElementById("qrcode"), { text: window.location.origin + "?room=" + roomCode, width: 140, height: 140 });
-            
             input.addEventListener('input', (e) => {
                 const currentText = e.target.value;
                 if (currentText.length > lastSentText.length) {
@@ -140,8 +193,36 @@
                     lastSentText = currentText;
                 }
             });
+        }
+
+        // --- AI SKRIBENTUR ---
+        function setupAIListeners() {
+            const input = document.getElementById('ai-raw-input');
+            input.focus();
+            input.addEventListener('input', (e) => {
+                const currentText = e.target.value;
+                if (currentText.length > lastSentText.length) {
+                    aiBuffer += currentText.slice(lastSentText.length);
+                }
+                lastSentText = currentText;
+            });
+
+            // Sendir uppsafnaðan tekst til Gemini hvørt 15. sekund
+            setInterval(() => {
+                if (aiBuffer.trim().length > 0 && currentRole === 'writer-ai') {
+                    const textToSend = aiBuffer;
+                    aiBuffer = ""; 
+                    socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend });
+                }
+            }, 15000);
+        }
+
+        socket.on('ai-text-result', (correctedText) => {
+            document.getElementById('ai-corrected-view').value += correctedText + " ";
+            socket.emit('text-delta', { roomCode: currentRoom, delta: correctedText + " " });
         });
 
+        // --- LESARI ---
         socket.on('session-joined', () => {
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('reader-ui').classList.remove('hidden');
@@ -149,14 +230,19 @@
         });
 
         socket.on('reader-count', (count) => {
-            document.getElementById('reader-count').innerText = count;
+            const badge = document.getElementById('reader-count');
+            const badgeAi = document.getElementById('reader-count-ai');
+            if (badge) badge.innerText = count;
+            if (badgeAi) badgeAi.innerText = count;
         });
 
         socket.on('text-delta', (delta) => {
             const indicator = document.getElementById('typing-indicator');
-            indicator.style.display = "block";
-            clearTimeout(typingTimer);
-            typingTimer = setTimeout(() => indicator.style.display = "none", 2000);
+            if (indicator) {
+                indicator.style.display = "block";
+                clearTimeout(typingTimer);
+                typingTimer = setTimeout(() => indicator.style.display = "none", 2000);
+            }
             
             const pIndicator = document.getElementById('pause-indicator');
             if (pIndicator) pIndicator.style.opacity = "0";
@@ -193,11 +279,9 @@
                     if (token.trim()) {
                         await new Promise(r => setTimeout(r, (60 / wpm) * 1000));
                         
-                        // SCROLLING LOGIKKUR:
+                        // Scrolling logikkur
                         const rect = out.getBoundingClientRect();
-                        // Vit setu trigger til 95% av skermhæddini
                         const trigger = window.innerHeight * 0.95; 
-                        
                         if (rect.top + rect.height > trigger) {
                             window.scrollBy({ 
                                 top: (rect.top + rect.height) - trigger, 
@@ -210,6 +294,7 @@
             isProcessing = false;
         }
 
+        // --- STÝRING & YMISKT ---
         function adjustWPM(val) {
             wpm = Math.max(40, Math.min(400, wpm + val));
             document.getElementById('wpm-display').innerText = wpm;
@@ -233,13 +318,21 @@
 
         socket.on('connect', () => {
             if (currentRoom) {
-                const isWriter = !document.getElementById('writer-ui').classList.contains('hidden');
+                const isWriter = !document.getElementById('writer-ui').classList.contains('hidden') || !document.getElementById('writer-ai-ui').classList.contains('hidden');
                 socket.emit(isWriter ? 'reclaim-session' : 'join-session', currentRoom);
             }
         });
 
+        // Kanna url parametur
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) { document.getElementById('roomCode').value = urlParams.get('room'); init('reader'); }
+
+        // Sendir ein ping hvørt 2. minutt (120.000 ms) fyri at halda lív í
+        setInterval(function() {
+            fetch('/ping')
+                .then(response => console.log('Sessión hildin við lívi:', new Date().toLocaleTimeString()))
+                .catch(error => console.error('Feilur í ping:', error));
+        }, 120000);
     </script>
 </body>
 </html>
