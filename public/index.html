@@ -214,7 +214,7 @@
                     aiBuffer = ""; 
                     socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend });
                 }
-            }, 10000);
+            }, 5000);
         }
 
         socket.on('ai-text-result', (correctedText) => {
