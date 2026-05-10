@@ -207,14 +207,14 @@
                 lastSentText = currentText;
             });
 
-            // Sendir uppsafnaðan tekst til Gemini hvørt 15. sekund
+            // Sendir uppsafnaðan tekst til Gemini hvørt 10. sekund
             setInterval(() => {
                 if (aiBuffer.trim().length > 0 && currentRole === 'writer-ai') {
                     const textToSend = aiBuffer;
                     aiBuffer = ""; 
                     socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend });
                 }
-            }, 15000);
+            }, 10000);
         }
 
         socket.on('ai-text-result', (correctedText) => {
