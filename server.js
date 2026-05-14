@@ -82,9 +82,16 @@ io.on('connection', (socket) => {
         if (activeSessions.get(roomCode) === socket.id) {
             try {
                 // Promptin til Gemini (kann tillagast eftir tørvi)
-                //const prompt = `Tú ert ein málsligur hjálpari fyri deyv og tunghoyrd. Dikteringin fer fram á møti, og tú rættar dikteringina til, áðrenn hon verður víst teimum ið lesa. Umset henda føroyska tekstin (sum er talu-til-tekst) til tjekkiskt, og set teknseting (komma, punktum osfr.), so hann er lættur at lesa. Kemur okkurt orð skeivt fyri, rætta so orðið soleiðis at tað passar í kontextin. Fjerna ískotin orð, so sum 'Øhh', og óneyðugar endurtøkur. Varðveit meiningina og málburðin. Goym kontekstin, og brúka hann til at gera dikteringina rættari og rættari, so hvørt sum tað verður talað. Svara BARA við rættaða tekstinum, onki annað: "${text}"`
-                const prompt = `Tú ert ein málsligur hjálpari fyri deyv og tunghoyrd. Dikteringin fer fram á møti, og tú rættar dikteringina til, áðrenn hon verður víst teimum ið lesa. Evni er oftast andaligt og grunda á bíbliuna og kristnu trúnna - Tað kann koma fyri at vit tosa um annað, so sum lýsingar og hvat hendir í samfelagnum og í salinum gjøgnum vikuna. Rætta henda føroyska tekstin (sum er talu-til-tekst) fyri stavivillur og set teknseting (komma, punktum osfr.), so hann er lættur at lesa. Kemur okkurt orð skeivt fyri, rætta so orðið soleiðis at tað passar í kontextin. Fjerna ískotin orð, so sum 'Øhh', og óneyðugar endurtøkur. Varðveit meiningina og málburðin. Goym kontekstin, og brúka hann til at gera dikteringina rættari og rættari, so hvørt sum tað verður talað á møtinum. Svara BARA við rættaða tekstinum, onki annað: "${text}"`;
-    
+                const prompt = `
+                    Tú ert ein serfrøðingur í føroyskum máli. 
+                    Uppgávan: Rætta talu-til-tekst frá einum kirkjumøti.
+                    Reglur:
+                    1. Rætta stavivillur (t.d. 'Sungi' -> 'Syngi').
+                    2. Set teknseting (punktum og komma).
+                    3. Fjerna fylla-orð (øhh, hm, osfr.).
+                    4. Varðveit andaliga innihaldið.
+                    5. SVARA BARA VIÐ RÆTTAÐA TEKSTINUM.
+                    Tekstur ið skal rættast: "${text}"`;
                 
                 const result = await model.generateContent(prompt);
                 const correctedText = result.response.text();
