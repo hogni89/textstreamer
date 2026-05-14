@@ -16,7 +16,6 @@
         <input type="text" id="roomCode" autocomplete="off">
         <div style="display:flex; gap:10px; flex-wrap: wrap; justify-content: center;">
             <button onclick="init('writer')" id="txt-btn-create"></button>
-            <!-- Nýggjur AI Knappur -->
             <button onclick="init('writer-ai')" id="txt-btn-create-ai" style="background: #28a745;">Stovna við AI</button>
             <button onclick="init('reader')" id="txt-btn-join"></button>
         </div>
@@ -34,7 +33,6 @@
         </div>
     </div>
 
-    <!-- Vanligt Writer UI -->
     <div id="writer-ui" class="hidden" style="padding: 20px; text-align: center;">
         <div class="reader-badge">👁️ <span id="reader-count">0</span> <span id="txt-readers-online"></span></div>
         <h2><span id="txt-writer-header"></span><span id="active-code"></span></h2>
@@ -45,11 +43,20 @@
         <button class="stop" onclick="terminate()" id="txt-writer-terminate"></button>
     </div>
 
-    <!-- AI Writer UI -->
     <div id="writer-ai-ui" class="hidden" style="padding: 20px; text-align: center;">
         <div class="reader-badge">🤖 AI Rætting Virkin (<span id="reader-count-ai">0</span> <span id="txt-readers-online-ai"></span>)</div>
         <h2><span id="txt-writer-header-ai"></span><span id="active-code-ai"></span></h2>
         <div id="qrcode-ai"></div>
+        
+        <div style="margin-top: 15px;">
+            <label style="font-weight: bold; font-size: 16px;">Mál hjá lesara:</label>
+            <select id="ai-language" style="margin-left: 10px; padding: 6px 12px; font-size: 16px; border-radius: 8px;">
+                <option value="fo">Føroyskt (Rætta)</option>
+                <option value="da">Danskt (Umset)</option>
+                <option value="en">Enskt (Umset)</option>
+            </select>
+        </div>
+
         <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px;">
             <div style="flex: 1; min-width: 300px;">
                 <h3 style="font-size: 16px;">Dikteraður tekstur (Raw)</h3>
@@ -64,7 +71,6 @@
         <button class="stop" onclick="terminate()" id="txt-writer-terminate-ai"></button>
     </div>
 
-    <!-- Reader UI -->
     <div id="reader-ui" class="hidden">
         <div class="header">
             <button class="exit-btn" onclick="exitSession()" id="txt-reader-exit"></button>
@@ -211,14 +217,17 @@
             setInterval(() => {
                 if (aiBuffer.trim().length > 0 && currentRole === 'writer-ai') {
                     const textToSend = aiBuffer;
+                    const targetLang = document.getElementById('ai-language').value; // --- NÝTT: Heinta málið
                     aiBuffer = ""; 
-                    socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend });
+                    socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend, targetLang: targetLang }); // --- NÝTT: Send við
                 }
             }, 5000);
         }
 
         socket.on('ai-text-result', (correctedText) => {
-            document.getElementById('ai-corrected-view').value += correctedText + " ";
+            const aiView = document.getElementById('ai-corrected-view');
+            aiView.value += correctedText + " ";
+            aiView.scrollTop = aiView.scrollHeight; // --- NÝTT: Tryggjar at kassin scrollar niður
             socket.emit('text-delta', { roomCode: currentRoom, delta: correctedText + " " });
         });
 
