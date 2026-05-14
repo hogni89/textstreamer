@@ -25,7 +25,7 @@ REGLUR OG KONTEKSTUR:
 4. Fjerna ískotin orð, so sum 'Øhh', og óneyðugar endurtøkur.
 5. Svara BARA við rættaða ella umsetta tekstinum, og onki annað. Ongar viðmerkingar.`;
 
-// NÝTT: Sløkk fyri trygdarfiltrum, so andalig orð ikki verða blokerað!
+// Sløkk fyri trygdarfiltrum, so andalig orð ikki verða blokerað
 const safetySettings = [
     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -34,7 +34,7 @@ const safetySettings = [
 ];
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-3.1-flash-lite-preview",
     systemInstruction: systemPrompt,
     safetySettings: safetySettings
 });
@@ -43,7 +43,7 @@ app.get('/ping', (req, res) => res.status(200).send('pong'));
 
 app.use(express.static('public'));
 
-const activeSessions = new Map();
+const activeSessions = new Map(); // roomCode -> { ownerId, chatSession, ttsAllowed }
 const disconnectTimeouts = new Map();
 
 function updateReaderCount(roomCode) {
@@ -67,7 +67,12 @@ io.on('connection', (socket) => {
                 generationConfig: { maxOutputTokens: 1000 },
             });
 
-            activeSessions.set(roomCode, { ownerId: socket.id, chatSession: chat });
+            activeSessions.set(roomCode, { 
+                ownerId: socket.id, 
+                chatSession: chat,
+                ttsAllowed: false // Standard: Upplestur er sløktur í byrjanini
+            });
+            
             socket.join(roomCode);
             socket.emit('session-created', roomCode);
             console.log(`Sessión stovnað: ${roomCode}`);
@@ -75,9 +80,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('join-session', (roomCode) => {
-        if (activeSessions.has(roomCode)) {
+        const session = activeSessions.get(roomCode);
+        if (session) {
             socket.join(roomCode);
-            socket.emit('session-joined', roomCode);
+            // Send bæði kotu og TTS-støðu til lesaran
+            socket.emit('session-joined', { roomCode: roomCode, ttsAllowed: session.ttsAllowed });
             updateReaderCount(roomCode);
         } else {
             socket.emit('session-error', 'Sessiónin finst ikki.');
@@ -94,11 +101,19 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Skribentur broytir TTS loyvið
+    socket.on('set-tts-state', ({ roomCode, state }) => {
+        const session = activeSessions.get(roomCode);
+        if (session && session.ownerId === socket.id) {
+            session.ttsAllowed = state;
+            io.to(roomCode).emit('tts-state-changed', state);
+        }
+    });
+
     socket.on('process-ai-text', async ({ roomCode, text, targetLang }) => {
         const session = activeSessions.get(roomCode);
         if (session && session.ownerId === socket.id) {
             try {
-                // NÝTT: Gev enn treiskari boð um at umseta altíð
                 let instruction = "";
                 if (targetLang && targetLang !== 'fo') {
                     instruction = `[UMSETINGSKRAV: TÚ SKALT UMSETA HETTA TEKSTBROTIÐ TIL ${targetLang.toUpperCase()}. SVARA BARA VIÐ UMSETINGINI.]\n\n`;
@@ -109,28 +124,28 @@ io.on('connection', (socket) => {
                 const result = await session.chatSession.sendMessage(instruction + `Tekstur at viðgera: "${text}"`);
                 let correctedText = result.response.text().trim();
                 
-                // Tryggja at AI ikki sendir tóm svar, um hann einki fann at rætta
                 if (!correctedText) correctedText = text;
 
                 socket.emit('ai-text-result', correctedText);
             } catch (error) {
-                console.error("🔴 Gemini Feilur (AI noktaði ella feilaði):", error.message);
-                
-                // Um vit ætlaðu at umseta, men AI feilar, so koyra vit "[FEILUR]" inn, 
-                // so lesararnir ikki brádliga fáa føroyskt mitt í tí enska.
+                console.error("🔴 Gemini Feilur:", error.message);
                 if (targetLang && targetLang !== 'fo') {
                     socket.emit('ai-text-result', `[Tøkniligur steðgur] `);
                 } else {
-                    socket.emit('ai-text-result', text); // Rætting feilaði, send ráan føroyskan tekst
+                    socket.emit('ai-text-result', text);
                 }
             }
         }
     });
 
-    socket.on('text-delta', ({ roomCode, delta }) => {
-        const session = activeSessions.get(roomCode);
+    socket.on('text-delta', (payload) => {
+        const session = activeSessions.get(payload.roomCode);
         if (session && session.ownerId === socket.id) {
-            socket.to(roomCode).emit('text-delta', delta);
+            // Sendir alt objektid við delta og lang víðari
+            socket.to(payload.roomCode).emit('text-delta', { 
+                delta: payload.delta, 
+                lang: payload.lang 
+            });
         }
     });
 
