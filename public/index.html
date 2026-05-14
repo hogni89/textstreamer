@@ -37,6 +37,14 @@
     <div id="writer-ui" class="hidden" style="padding: 20px; text-align: center;">
         <div class="reader-badge">👁️ <span id="reader-count">0</span> <span id="txt-readers-online"></span></div>
         <h2><span id="txt-writer-header"></span><span id="active-code"></span></h2>
+        
+        <div style="margin: 15px 0;">
+            <label style="cursor: pointer; background: #e9ecef; padding: 10px; border-radius: 8px; font-weight: bold; color: black;">
+                <input type="checkbox" onchange="updateTTSState(this.checked)" style="transform: scale(1.2); margin-right: 8px;">
+                Loyv lesarum at brúka upplestur
+            </label>
+        </div>
+
         <div id="qrcode"></div>
         <br>
         <textarea id="writer-input"></textarea>
@@ -48,16 +56,27 @@
     <div id="writer-ai-ui" class="hidden" style="padding: 20px; text-align: center;">
         <div class="reader-badge">🤖 AI Rætting Virkin (<span id="reader-count-ai">0</span> <span id="txt-readers-online-ai"></span>)</div>
         <h2><span id="txt-writer-header-ai"></span><span id="active-code-ai"></span></h2>
-        <div id="qrcode-ai"></div>
         
-        <div style="margin-top: 15px;">
-            <label style="font-weight: bold; font-size: 16px;">Mál hjá lesara:</label>
-            <select id="ai-language" style="margin-left: 10px; padding: 6px 12px; font-size: 16px; border-radius: 8px;">
-                <option value="fo">Føroyskt (Rætta)</option>
-                <option value="da">Danskt (Umset)</option>
-                <option value="en">Enskt (Umset)</option>
-            </select>
+        <div style="margin: 15px 0; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 8px; color: black;">
+                <label style="font-weight: bold; font-size: 16px;">Mál hjá lesara:</label>
+                <select id="ai-language" style="margin-left: 10px; padding: 6px 12px; font-size: 16px; border-radius: 8px;">
+                    <option value="fo">Føroyskt (Rætta)</option>
+                    <option value="da">Danskt (Umset)</option>
+                    <option value="en">Enskt (Umset)</option>
+                    <option value="no">Norskt (Umset)</option>
+                </select>
+            </div>
+            
+            <div style="background: #e9ecef; padding: 10px; border-radius: 8px; display: flex; align-items: center; color: black;">
+                <label style="cursor: pointer; font-weight: bold;">
+                    <input type="checkbox" onchange="updateTTSState(this.checked)" style="transform: scale(1.2); margin-right: 8px;">
+                    Loyv lesarum at brúka upplestur
+                </label>
+            </div>
         </div>
+
+        <div id="qrcode-ai"></div>
 
         <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px;">
             <div style="flex: 1; min-width: 300px;">
@@ -80,8 +99,8 @@
             <select id="size-select" onchange="document.documentElement.style.setProperty('--size', this.value + 'px')"></select>
             <select id="theme-select" onchange="applyTheme(this.value)"></select>
             
-            <!-- NÝTT: Upplestrar knappur -->
-            <button id="tts-toggle" onclick="toggleTTS()" style="padding: 6px 12px; border-radius: 8px;"></button>
+            <!-- TTS Knappur fjaldur standard -->
+            <button id="tts-toggle" onclick="toggleTTS()" style="padding: 6px 12px; border-radius: 8px; display: none;"></button>
 
             <div class="wpm-controls">
                 <button onclick="adjustWPM(-10)">-</button>
@@ -99,9 +118,8 @@
         let currentRoom = "", currentRole = "", wpm = 200, isProcessing = false;
         let aiBuffer = "", lastSentText = "", fullTextReceived = "";
         let textQueue = [], pauseTimer = null, typingTimer = null, wakeLock = null;
-        let ttsEnabled = false; // NÝTT: Stýrir um upplestur er frá ella til
+        let ttsEnabled = false;
 
-        // --- MÁL & TEKSTIR ---
         function applyLanguage() {
             document.title = lang.title;
             document.getElementById('txt-setup-title').innerText = lang.setup_title;
@@ -125,7 +143,9 @@
             
             document.getElementById('txt-reader-exit').innerText = lang.reader_exit;
             document.getElementById('txt-reader-pause').innerText = lang.reader_pause;
-            document.getElementById('tts-toggle').innerText = lang.reader_tts_off; // Standard
+            
+            const ttsBtn = document.getElementById('tts-toggle');
+            if(ttsBtn) ttsBtn.innerText = lang.reader_tts_off || "🔈 Les upp";
 
             document.getElementById('txt-about-title').innerText = lang.about_title;
             document.getElementById('txt-about-p1').innerText = lang.about_p1;
@@ -151,14 +171,12 @@
 
         applyLanguage();
 
-        // --- WAKE LOCK API ---
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
                 try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
             }
         }
 
-        // --- INITIATIÓN ---
         function init(role) {
             currentRoom = document.getElementById('roomCode').value.trim();
             currentRole = role;
@@ -168,7 +186,6 @@
 
         socket.on('session-created', (roomCode) => {
             document.getElementById('setup').classList.add('hidden');
-            
             const isAI = (currentRole === 'writer-ai');
             const uiId = isAI ? 'writer-ai-ui' : 'writer-ui';
             const codeId = isAI ? 'active-code-ai' : 'active-code';
@@ -180,14 +197,9 @@
             document.getElementById(qrId).innerHTML = "";
             new QRCode(document.getElementById(qrId), { text: window.location.origin + "?room=" + roomCode, width: 140, height: 140 });
 
-            if (isAI) {
-                setupAIListeners();
-            } else {
-                setupStandardListeners();
-            }
+            if (isAI) setupAIListeners(); else setupStandardListeners();
         });
 
-        // --- VANLIGUR SKRIBENTUR ---
         function setupStandardListeners() {
             const input = document.getElementById('writer-input');
             input.focus();
@@ -195,7 +207,7 @@
                 const currentText = e.target.value;
                 if (currentText.length > lastSentText.length) {
                     const delta = currentText.slice(lastSentText.length);
-                    socket.emit('text-delta', { roomCode: currentRoom, delta: delta });
+                    socket.emit('text-delta', { roomCode: currentRoom, delta: delta, lang: 'fo' });
                     lastSentText = currentText;
                 } else if (currentText.length === 0) {
                     socket.emit('text-reset', { roomCode: currentRoom });
@@ -206,7 +218,6 @@
             });
         }
 
-        // --- AI SKRIBENTUR ---
         function setupAIListeners() {
             const input = document.getElementById('ai-raw-input');
             input.focus();
@@ -218,6 +229,7 @@
                 lastSentText = currentText;
             });
 
+            // 2000 ms intervall til skjótari rætting
             setInterval(() => {
                 if (aiBuffer.trim().length > 0 && currentRole === 'writer-ai') {
                     const textToSend = aiBuffer;
@@ -225,22 +237,55 @@
                     aiBuffer = ""; 
                     socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend, targetLang: targetLang });
                 }
-            }, 5000);
+            }, 2000); 
         }
 
         socket.on('ai-text-result', (correctedText) => {
             const aiView = document.getElementById('ai-corrected-view');
             aiView.value += correctedText + " ";
-            aiView.scrollTop = aiView.scrollHeight;
-            socket.emit('text-delta', { roomCode: currentRoom, delta: correctedText + " " });
+            aiView.scrollTop = aiView.scrollHeight; 
+            
+            const currentLang = document.getElementById('ai-language').value;
+            socket.emit('text-delta', { roomCode: currentRoom, delta: correctedText + " ", lang: currentLang });
         });
 
-        // --- LESARI ---
-        socket.on('session-joined', () => {
+        function updateTTSState(state) {
+            socket.emit('set-tts-state', { roomCode: currentRoom, state: state });
+        }
+
+        socket.on('session-joined', (data) => {
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('reader-ui').classList.remove('hidden');
             requestWakeLock();
+            applyTTSState(data.ttsAllowed);
         });
+
+        socket.on('tts-state-changed', (state) => {
+            applyTTSState(state);
+        });
+
+        function applyTTSState(allowed) {
+            const ttsBtn = document.getElementById('tts-toggle');
+            if (allowed) {
+                ttsBtn.style.display = 'inline-block';
+            } else {
+                ttsBtn.style.display = 'none';
+                if (ttsEnabled) toggleTTS(); 
+            }
+        }
+
+        function toggleTTS() {
+            ttsEnabled = !ttsEnabled;
+            const btn = document.getElementById('tts-toggle');
+            if (ttsEnabled) {
+                btn.innerText = lang.reader_tts_on || "🔊 Mállausur";
+                const initUtterance = new SpeechSynthesisUtterance("");
+                window.speechSynthesis.speak(initUtterance);
+            } else {
+                btn.innerText = lang.reader_tts_off || "🔈 Les upp";
+                window.speechSynthesis.cancel();
+            }
+        }
 
         socket.on('reader-count', (count) => {
             const badge = document.getElementById('reader-count');
@@ -249,22 +294,13 @@
             if (badgeAi) badgeAi.innerText = count;
         });
 
-        // --- NÝTT: STÝRING AV UPPLESTRI ---
-        function toggleTTS() {
-            ttsEnabled = !ttsEnabled;
-            const btn = document.getElementById('tts-toggle');
-            if (ttsEnabled) {
-                btn.innerText = lang.reader_tts_on;
-                // Krevur at brúkarin trýstir fyri at aktivera Speech API í browsaranum
-                const initUtterance = new SpeechSynthesisUtterance("");
-                window.speechSynthesis.speak(initUtterance);
-            } else {
-                btn.innerText = lang.reader_tts_off;
-                window.speechSynthesis.cancel();
-            }
-        }
+        socket.on('text-delta', (payload) => {
+            let deltaText = payload.delta || payload; 
+            let receivedLang = payload.lang || 'fo';
 
-        socket.on('text-delta', (delta) => {
+            const langMap = { 'fo': 'fo-FO', 'da': 'da-DK', 'en': 'en-US', 'no': 'nb-NO' };
+            const ttsLocale = langMap[receivedLang] || 'fo-FO';
+
             const indicator = document.getElementById('typing-indicator');
             if (indicator) {
                 indicator.style.display = "block";
@@ -277,22 +313,21 @@
             clearTimeout(pauseTimer);
             pauseTimer = setTimeout(() => { if (fullTextReceived.length > 0) pIndicator.style.opacity = "1"; }, 10000);
 
-            // NÝTT: Les tekstin upp um tts er frá
-            if (ttsEnabled && 'speechSynthesis' in window && delta.trim() !== "") {
-                const utterance = new SpeechSynthesisUtterance(delta);
-                utterance.lang = 'fo-FO';
+            if (ttsEnabled && 'speechSynthesis' in window && deltaText.trim() !== "") {
+                const utterance = new SpeechSynthesisUtterance(deltaText);
+                utterance.lang = ttsLocale;
                 window.speechSynthesis.speak(utterance);
             }
 
-            textQueue.push(delta);
-            fullTextReceived += delta;
+            textQueue.push(deltaText);
+            fullTextReceived += deltaText;
             processQueue();
         });
 
         socket.on('text-reset', () => {
             textQueue = []; fullTextReceived = "";
             document.getElementById('output').innerHTML = '';
-            if ('speechSynthesis' in window) window.speechSynthesis.cancel(); // Steðga eisini taluni um reinsað verður
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         });
 
         async function processQueue() {
@@ -329,12 +364,8 @@
             isProcessing = false;
         }
 
-        // --- STÝRING & YMISKT ---
-        function adjustWPM(val) {
-            wpm = Math.max(40, Math.min(400, wpm + val));
-            document.getElementById('wpm-display').innerText = wpm;
-        }
-
+        function adjustWPM(val) { wpm = Math.max(40, Math.min(400, wpm + val)); document.getElementById('wpm-display').innerText = wpm; }
+        
         function applyTheme(theme) {
             const themes = { light: { bg: '#ffffff', text: '#000000' }, dark: { bg: '#000000', text: '#eeeeee' } };
             document.documentElement.style.setProperty('--bg', themes[theme].bg);
@@ -358,14 +389,11 @@
             }
         });
 
-        // Kanna url parametur
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) { document.getElementById('roomCode').value = urlParams.get('room'); init('reader'); }
 
         setInterval(function() {
-            fetch('/ping')
-                .then(response => console.log('Sessión hildin við lívi:', new Date().toLocaleTimeString()))
-                .catch(error => console.error('Feilur í ping:', error));
+            fetch('/ping').catch(error => console.error('Feilur í ping:', error));
         }, 120000);
     </script>
 </body>
