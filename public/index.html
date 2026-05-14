@@ -33,6 +33,7 @@
         </div>
     </div>
 
+    <!-- Vanligt Writer UI -->
     <div id="writer-ui" class="hidden" style="padding: 20px; text-align: center;">
         <div class="reader-badge">👁️ <span id="reader-count">0</span> <span id="txt-readers-online"></span></div>
         <h2><span id="txt-writer-header"></span><span id="active-code"></span></h2>
@@ -43,6 +44,7 @@
         <button class="stop" onclick="terminate()" id="txt-writer-terminate"></button>
     </div>
 
+    <!-- AI Writer UI -->
     <div id="writer-ai-ui" class="hidden" style="padding: 20px; text-align: center;">
         <div class="reader-badge">🤖 AI Rætting Virkin (<span id="reader-count-ai">0</span> <span id="txt-readers-online-ai"></span>)</div>
         <h2><span id="txt-writer-header-ai"></span><span id="active-code-ai"></span></h2>
@@ -71,11 +73,16 @@
         <button class="stop" onclick="terminate()" id="txt-writer-terminate-ai"></button>
     </div>
 
+    <!-- Reader UI -->
     <div id="reader-ui" class="hidden">
         <div class="header">
             <button class="exit-btn" onclick="exitSession()" id="txt-reader-exit"></button>
             <select id="size-select" onchange="document.documentElement.style.setProperty('--size', this.value + 'px')"></select>
             <select id="theme-select" onchange="applyTheme(this.value)"></select>
+            
+            <!-- NÝTT: Upplestrar knappur -->
+            <button id="tts-toggle" onclick="toggleTTS()" style="padding: 6px 12px; border-radius: 8px;"></button>
+
             <div class="wpm-controls">
                 <button onclick="adjustWPM(-10)">-</button>
                 <span>WPM: <b id="wpm-display">200</b></span>
@@ -92,6 +99,7 @@
         let currentRoom = "", currentRole = "", wpm = 200, isProcessing = false;
         let aiBuffer = "", lastSentText = "", fullTextReceived = "";
         let textQueue = [], pauseTimer = null, typingTimer = null, wakeLock = null;
+        let ttsEnabled = false; // NÝTT: Stýrir um upplestur er frá ella til
 
         // --- MÁL & TEKSTIR ---
         function applyLanguage() {
@@ -104,7 +112,6 @@
             document.getElementById('txt-readers-online').innerText = lang.readers_online;
             document.getElementById('txt-readers-online-ai').innerText = lang.readers_online;
             
-            // Header tekstir í sessión
             const wHeader = document.getElementById('txt-writer-header');
             if(wHeader) wHeader.innerText = lang.writer_header;
             const wHeaderAi = document.getElementById('txt-writer-header-ai');
@@ -118,8 +125,8 @@
             
             document.getElementById('txt-reader-exit').innerText = lang.reader_exit;
             document.getElementById('txt-reader-pause').innerText = lang.reader_pause;
+            document.getElementById('tts-toggle').innerText = lang.reader_tts_off; // Standard
 
-            // About partur
             document.getElementById('txt-about-title').innerText = lang.about_title;
             document.getElementById('txt-about-p1').innerText = lang.about_p1;
             document.getElementById('txt-about-p2').innerText = lang.about_p2;
@@ -133,7 +140,6 @@
             );
             document.getElementById('txt-about-footer').innerText = lang.about_footer;
 
-            // Select boksar
             document.getElementById('size-select').innerHTML = `
                 <option value="40">${lang.reader_size_small}</option>
                 <option value="60" selected>${lang.reader_size_medium}</option>
@@ -171,7 +177,6 @@
             document.getElementById(uiId).classList.remove('hidden');
             document.getElementById(codeId).innerText = roomCode;
             
-            // Upprunaliga QR logikkin nýtt til bæði sýnini
             document.getElementById(qrId).innerHTML = "";
             new QRCode(document.getElementById(qrId), { text: window.location.origin + "?room=" + roomCode, width: 140, height: 140 });
 
@@ -213,13 +218,12 @@
                 lastSentText = currentText;
             });
 
-            // Sendir uppsafnaðan tekst til Gemini hvørt 10. sekund
             setInterval(() => {
                 if (aiBuffer.trim().length > 0 && currentRole === 'writer-ai') {
                     const textToSend = aiBuffer;
-                    const targetLang = document.getElementById('ai-language').value; // --- NÝTT: Heinta málið
+                    const targetLang = document.getElementById('ai-language').value;
                     aiBuffer = ""; 
-                    socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend, targetLang: targetLang }); // --- NÝTT: Send við
+                    socket.emit('process-ai-text', { roomCode: currentRoom, text: textToSend, targetLang: targetLang });
                 }
             }, 5000);
         }
@@ -227,7 +231,7 @@
         socket.on('ai-text-result', (correctedText) => {
             const aiView = document.getElementById('ai-corrected-view');
             aiView.value += correctedText + " ";
-            aiView.scrollTop = aiView.scrollHeight; // --- NÝTT: Tryggjar at kassin scrollar niður
+            aiView.scrollTop = aiView.scrollHeight;
             socket.emit('text-delta', { roomCode: currentRoom, delta: correctedText + " " });
         });
 
@@ -245,6 +249,21 @@
             if (badgeAi) badgeAi.innerText = count;
         });
 
+        // --- NÝTT: STÝRING AV UPPLESTRI ---
+        function toggleTTS() {
+            ttsEnabled = !ttsEnabled;
+            const btn = document.getElementById('tts-toggle');
+            if (ttsEnabled) {
+                btn.innerText = lang.reader_tts_on;
+                // Krevur at brúkarin trýstir fyri at aktivera Speech API í browsaranum
+                const initUtterance = new SpeechSynthesisUtterance("");
+                window.speechSynthesis.speak(initUtterance);
+            } else {
+                btn.innerText = lang.reader_tts_off;
+                window.speechSynthesis.cancel();
+            }
+        }
+
         socket.on('text-delta', (delta) => {
             const indicator = document.getElementById('typing-indicator');
             if (indicator) {
@@ -258,6 +277,13 @@
             clearTimeout(pauseTimer);
             pauseTimer = setTimeout(() => { if (fullTextReceived.length > 0) pIndicator.style.opacity = "1"; }, 10000);
 
+            // NÝTT: Les tekstin upp um tts er frá
+            if (ttsEnabled && 'speechSynthesis' in window && delta.trim() !== "") {
+                const utterance = new SpeechSynthesisUtterance(delta);
+                utterance.lang = 'fo-FO';
+                window.speechSynthesis.speak(utterance);
+            }
+
             textQueue.push(delta);
             fullTextReceived += delta;
             processQueue();
@@ -266,6 +292,7 @@
         socket.on('text-reset', () => {
             textQueue = []; fullTextReceived = "";
             document.getElementById('output').innerHTML = '';
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel(); // Steðga eisini taluni um reinsað verður
         });
 
         async function processQueue() {
@@ -288,7 +315,6 @@
                     if (token.trim()) {
                         await new Promise(r => setTimeout(r, (60 / wpm) * 1000));
                         
-                        // Scrolling logikkur
                         const rect = out.getBoundingClientRect();
                         const trigger = window.innerHeight * 0.95; 
                         if (rect.top + rect.height > trigger) {
@@ -336,7 +362,6 @@
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) { document.getElementById('roomCode').value = urlParams.get('room'); init('reader'); }
 
-        // Sendir ein ping hvørt 2. minutt (120.000 ms) fyri at halda lív í
         setInterval(function() {
             fetch('/ping')
                 .then(response => console.log('Sessión hildin við lívi:', new Date().toLocaleTimeString()))
