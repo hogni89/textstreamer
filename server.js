@@ -16,17 +16,18 @@ const io = new Server(server, {
 // Gemini Uppseting
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// System Promptin ið stýrir hvussu Gemini rættar tekstin
+// HER ERU REGLURNAR HJÁ AI AGENTINUM (SYSTEM INSTRUCTION)
 const systemPrompt = `Tú ert ein málsligur hjálpari fyri deyv og tunghoyrd. 
 Dikteringin fer fram á møti, og tú rættar dikteringina til, áðrenn hon verður víst teimum ið lesa. 
-Evnið er oftast andaligt og grundað á Bíbliuna og kristnu trúnna, men tað kann eisini vera um samfelagsviðurskifti.
 
-REGLUR:
-1. Rætta stavivillur og set teknseting (komma, punktum osfr.).
-2. Um tvey orð ljóða líka, brúka so kontekstin frá tí, sum er sagt fyrr í møtinum, at velja tað rætta.
-3. Fjerna ískotin orð (øhh, hm) og óneyðugar endurtøkur.
-4. Varðveit meiningina og málburðin.
-5. Svara BARA við rættaða tekstinum, onki annað.`;
+REGLUR OG KONTEKSTUR:
+1. Evnið er oftast andaligt og grundað á Bíbliuna og kristnu trúnna. Tað kann tó koma fyri, at vit tosa um annað, so sum lýsingar, samfelagið og hvat hendir í salinum.
+2. Rætta henda føroyska tekstin (sum er talu-til-tekst) fyri stavivillur og set teknseting (komma, punktum osfr.).
+3. Kemur okkurt orð skeivt fyri, rætta so orðið soleiðis at tað passar í kontextin (t.d. andalig orð ið STT hevur mistikið).
+4. Fjerna ískotin orð, so sum 'Øhh', og óneyðugar endurtøkur.
+5. Varðveit meiningina og málburðin.
+6. Brúka kjak-kontekstin til at gera dikteringina rættari og rættari, so hvørt sum tað verður talað á møtinum.
+7. Svara BARA við rættaða/umsetta tekstinum, onki annað.`;
 
 const model = genAI.getGenerativeModel({ 
     model: "gemini-1.5-flash",
@@ -39,9 +40,8 @@ app.get('/ping', (req, res) => {
 
 app.use(express.static('public'));
 
-// activeSessions goymir nú { ownerId, chatSession }
-const activeSessions = new Map(); 
-const disconnectTimeouts = new Map(); 
+const activeSessions = new Map(); // roomCode -> { ownerId, chatSession }
+const disconnectTimeouts = new Map(); // roomCode -> timeout-ID
 
 function updateReaderCount(roomCode) {
     const clients = io.sockets.adapter.rooms.get(roomCode);
@@ -52,15 +52,14 @@ function updateReaderCount(roomCode) {
 io.on('connection', (socket) => {
     
     socket.on('client-error', (errorInfo) => {
-        console.error(`🔴 [BROWSER FEILUR] ${socket.id}:`, JSON.stringify(errorInfo, null, 2));
+        console.error(`🔴 [BROWSER FEILUR] Frá ${socket.id}:`, JSON.stringify(errorInfo, null, 2));
     });
 
-    // Skribentur stovnar nýggja sessión
     socket.on('create-session', (roomCode) => {
         if (activeSessions.has(roomCode)) {
             socket.emit('session-error', 'Henda sessiónskotan er longu í brúk.');
         } else {
-            // STOVNA AI CHAT SESSIÓN HER
+            // Stovna nýggja chat-sessión við Gemini
             const chat = model.startChat({
                 history: [],
                 generationConfig: { maxOutputTokens: 1000 },
@@ -73,11 +72,10 @@ io.on('connection', (socket) => {
 
             socket.join(roomCode);
             socket.emit('session-created', roomCode);
-            console.log(`Sessión stovnað við AI-minni: ${roomCode}`);
+            console.log(`Sessión stovnað: ${roomCode}`);
         }
     });
 
-    // Lesari kemur inn í sessión
     socket.on('join-session', (roomCode) => {
         if (activeSessions.has(roomCode)) {
             socket.join(roomCode);
@@ -88,11 +86,10 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Skribentur reclaim'ar sína sessión (t.d. eftir refresh)
     socket.on('reclaim-session', (roomCode) => {
         const session = activeSessions.get(roomCode);
         if (session) {
-            session.ownerId = socket.id; // Uppdatera socket ID
+            session.ownerId = socket.id;
             socket.join(roomCode);
             if (disconnectTimeouts.has(roomCode)) {
                 clearTimeout(disconnectTimeouts.get(roomCode));
@@ -103,26 +100,26 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- AI BEHANDLING VIÐ MINNI ---
-    socket.on('process-ai-text', async ({ roomCode, text }) => {
+    socket.on('process-ai-text', async ({ roomCode, text, targetLang }) => {
         const session = activeSessions.get(roomCode);
-        
         if (session && session.ownerId === socket.id) {
             try {
-                // Vit brúka sendMessage í staðin fyri generateContent fyri at varðveita søguna
-                const result = await session.chatSession.sendMessage(text);
+                // Legg mál-instruksjónina afturat um tað skal umsetast
+                let instruction = (targetLang && targetLang !== 'fo') 
+                    ? `Umset henda tekstin til ${targetLang} og rætta málsliga.` 
+                    : `Rætta henda tekstin á føroyskum.`;
+
+                const result = await session.chatSession.sendMessage(`${instruction}\n\nTekstur: "${text}"`);
                 const correctedText = result.response.text();
                 
                 socket.emit('ai-text-result', correctedText);
             } catch (error) {
                 console.error("Gemini Feilur:", error);
-                // Um AI feilar, senda vit bara upprunaliga tekstin víðari
                 socket.emit('ai-text-result', text);
             }
         }
     });
 
-    // Sendir nýggja tekstbrotin víðari til lesararnar
     socket.on('text-delta', ({ roomCode, delta }) => {
         const session = activeSessions.get(roomCode);
         if (session && session.ownerId === socket.id) {
@@ -130,7 +127,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Reinsa skermin hjá lesarum
     socket.on('text-reset', ({ roomCode }) => {
         const session = activeSessions.get(roomCode);
         if (session && session.ownerId === socket.id) {
@@ -138,13 +134,11 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Skribenturin endar sessiónina manuelt
     socket.on('stop-session', (roomCode) => {
         const session = activeSessions.get(roomCode);
         if (session && session.ownerId === socket.id) {
             io.to(roomCode).emit('session-ended');
             activeSessions.delete(roomCode);
-            console.log(`Sessión endað manuelt: ${roomCode}`);
         }
     });
 
@@ -163,7 +157,6 @@ io.on('connection', (socket) => {
                     io.to(roomCode).emit('session-ended');
                     activeSessions.delete(roomCode);
                     disconnectTimeouts.delete(roomCode);
-                    console.log(`Sessión stongd eftir timeout: ${roomCode}`);
                 }, 60000);
                 disconnectTimeouts.set(roomCode, timeout);
             }
