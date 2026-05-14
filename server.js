@@ -30,7 +30,7 @@ REGLUR OG KONTEKSTUR:
 7. Svara BARA við rættaða/umsetta tekstinum, onki annað.`;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
+    model: "gemini-3.1-flash-lite",
     systemInstruction: systemPrompt
 });
 
