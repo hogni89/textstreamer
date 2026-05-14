@@ -15,17 +15,33 @@ const io = new Server(server, {
 
 // Gemini Uppseting
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+
+// System Promptin ið stýrir hvussu Gemini rættar tekstin
+const systemPrompt = `Tú ert ein málsligur hjálpari fyri deyv og tunghoyrd. 
+Dikteringin fer fram á møti, og tú rættar dikteringina til, áðrenn hon verður víst teimum ið lesa. 
+Evnið er oftast andaligt og grundað á Bíbliuna og kristnu trúnna, men tað kann eisini vera um samfelagsviðurskifti.
+
+REGLUR:
+1. Rætta stavivillur og set teknseting (komma, punktum osfr.).
+2. Um tvey orð ljóða líka, brúka so kontekstin frá tí, sum er sagt fyrr í møtinum, at velja tað rætta.
+3. Fjerna ískotin orð (øhh, hm) og óneyðugar endurtøkur.
+4. Varðveit meiningina og málburðin.
+5. Svara BARA við rættaða tekstinum, onki annað.`;
+
+const model = genAI.getGenerativeModel({ 
+    model: "gemini-1.5-flash",
+    systemInstruction: systemPrompt
+});
 
 app.get('/ping', (req, res) => {
-    console.log('Ping mót tikið - heldur sessiónini á lívi.');
     res.status(200).send('pong');
 });
 
 app.use(express.static('public'));
 
-const activeSessions = new Map(); // roomCode -> socket.id hjá skribenti
-const disconnectTimeouts = new Map(); // roomCode -> timeout-ID
+// activeSessions goymir nú { ownerId, chatSession }
+const activeSessions = new Map(); 
+const disconnectTimeouts = new Map(); 
 
 function updateReaderCount(roomCode) {
     const clients = io.sockets.adapter.rooms.get(roomCode);
@@ -35,9 +51,8 @@ function updateReaderCount(roomCode) {
 
 io.on('connection', (socket) => {
     
-    // Logga feilir frá browserum til Render Logs fyri betri feilfinning
     socket.on('client-error', (errorInfo) => {
-        console.error(`🔴 [BROWSER FEILUR] Frá ${socket.id}:`, JSON.stringify(errorInfo, null, 2));
+        console.error(`🔴 [BROWSER FEILUR] ${socket.id}:`, JSON.stringify(errorInfo, null, 2));
     });
 
     // Skribentur stovnar nýggja sessión
@@ -45,10 +60,20 @@ io.on('connection', (socket) => {
         if (activeSessions.has(roomCode)) {
             socket.emit('session-error', 'Henda sessiónskotan er longu í brúk.');
         } else {
-            activeSessions.set(roomCode, socket.id);
+            // STOVNA AI CHAT SESSIÓN HER
+            const chat = model.startChat({
+                history: [],
+                generationConfig: { maxOutputTokens: 1000 },
+            });
+
+            activeSessions.set(roomCode, { 
+                ownerId: socket.id, 
+                chatSession: chat 
+            });
+
             socket.join(roomCode);
             socket.emit('session-created', roomCode);
-            console.log(`Sessión stovnað: ${roomCode}`);
+            console.log(`Sessión stovnað við AI-minni: ${roomCode}`);
         }
     });
 
@@ -63,10 +88,11 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Skribentur reclaim'ar sína sessión
+    // Skribentur reclaim'ar sína sessión (t.d. eftir refresh)
     socket.on('reclaim-session', (roomCode) => {
-        if (activeSessions.has(roomCode)) {
-            activeSessions.set(roomCode, socket.id);
+        const session = activeSessions.get(roomCode);
+        if (session) {
+            session.ownerId = socket.id; // Uppdatera socket ID
             socket.join(roomCode);
             if (disconnectTimeouts.has(roomCode)) {
                 clearTimeout(disconnectTimeouts.get(roomCode));
@@ -77,58 +103,51 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- NÝTT: AI BEHANDLING ---
+    // --- AI BEHANDLING VIÐ MINNI ---
     socket.on('process-ai-text', async ({ roomCode, text }) => {
-        if (activeSessions.get(roomCode) === socket.id) {
+        const session = activeSessions.get(roomCode);
+        
+        if (session && session.ownerId === socket.id) {
             try {
-                // Promptin til Gemini (kann tillagast eftir tørvi)
-                const prompt = `
-                    Tú ert ein serfrøðingur í føroyskum máli. 
-                    Uppgávan: Rætta talu-til-tekst frá einum kirkjumøti.
-                    Reglur:
-                    1. Rætta stavivillur (t.d. 'Sungi' -> 'Syngi').
-                    2. Set teknseting (punktum og komma).
-                    3. Fjerna fylla-orð (øhh, hm, osfr.).
-                    4. Varðveit andaliga innihaldið.
-                    5. SVARA BARA VIÐ RÆTTAÐA TEKSTINUM.
-                    Tekstur ið skal rættast: "${text}"`;
-                
-                const result = await model.generateContent(prompt);
+                // Vit brúka sendMessage í staðin fyri generateContent fyri at varðveita søguna
+                const result = await session.chatSession.sendMessage(text);
                 const correctedText = result.response.text();
                 
                 socket.emit('ai-text-result', correctedText);
             } catch (error) {
                 console.error("Gemini Feilur:", error);
-                // Um AI feilar (t.d. manglandi API lykil), senda vit bara "raw" tekstin
+                // Um AI feilar, senda vit bara upprunaliga tekstin víðari
                 socket.emit('ai-text-result', text);
             }
         }
     });
 
-    // Delta sending: Sendir bara nýggja tekstbrotin víðari til lesararnar
+    // Sendir nýggja tekstbrotin víðari til lesararnar
     socket.on('text-delta', ({ roomCode, delta }) => {
-        if (activeSessions.get(roomCode) === socket.id) {
+        const session = activeSessions.get(roomCode);
+        if (session && session.ownerId === socket.id) {
             socket.to(roomCode).emit('text-delta', delta);
         }
     });
 
     // Reinsa skermin hjá lesarum
     socket.on('text-reset', ({ roomCode }) => {
-        if (activeSessions.get(roomCode) === socket.id) {
+        const session = activeSessions.get(roomCode);
+        if (session && session.ownerId === socket.id) {
             socket.to(roomCode).emit('text-reset');
         }
     });
 
     // Skribenturin endar sessiónina manuelt
     socket.on('stop-session', (roomCode) => {
-        if (activeSessions.get(roomCode) === socket.id) {
+        const session = activeSessions.get(roomCode);
+        if (session && session.ownerId === socket.id) {
             io.to(roomCode).emit('session-ended');
             activeSessions.delete(roomCode);
             console.log(`Sessión endað manuelt: ${roomCode}`);
         }
     });
 
-    // Uppdatera lesara-teljaran tá onkur fer út
     socket.on('disconnecting', () => {
         for (const roomCode of socket.rooms) {
             if (activeSessions.has(roomCode)) {
@@ -138,13 +157,13 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        for (let [roomCode, ownerId] of activeSessions.entries()) {
-            if (ownerId === socket.id) {
+        for (let [roomCode, session] of activeSessions.entries()) {
+            if (session.ownerId === socket.id) {
                 const timeout = setTimeout(() => {
                     io.to(roomCode).emit('session-ended');
                     activeSessions.delete(roomCode);
                     disconnectTimeouts.delete(roomCode);
-                    console.log(`Sessión rundað av eftir timeout: ${roomCode}`);
+                    console.log(`Sessión stongd eftir timeout: ${roomCode}`);
                 }, 60000);
                 disconnectTimeouts.set(roomCode, timeout);
             }
